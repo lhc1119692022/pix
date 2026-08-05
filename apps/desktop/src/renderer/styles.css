@@ -1290,6 +1290,10 @@ html[data-custom-window-controls="true"] .page-header {
   box-shadow: none;
   box-sizing: border-box;
 }
+.composer-card[data-drop-active="true"] {
+  border-color: color-mix(in srgb, var(--ring, #0a84ff) 58%, var(--composer-border));
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring, #0a84ff) 18%, transparent);
+}
 .composer-card-with-protrusion {
   border-top-left-radius: var(--radius-field);
   border-top-right-radius: var(--radius-field);

@@ -92,6 +92,13 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
     }
     const image = timeline.locator(".content-image-button");
     if ((await image.count()) > 0) {
+      const renderedImage = image.locator("img").first();
+      await renderedImage.scrollIntoViewIfNeeded();
+      await expect(renderedImage).toHaveAttribute("draggable", "true");
+      await renderedImage.dragTo(page.getByTestId("prompt-input"));
+      await expect(
+        page.getByTestId("composer-attachment-card").filter({ hasText: "photo.png" }),
+      ).toBeVisible();
       await image.click({ force: true });
       await expect(page.locator('.content-image-preview-dialog[role="dialog"]')).toBeVisible();
       await page.keyboard.press("Escape");

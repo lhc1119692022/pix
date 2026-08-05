@@ -91,6 +91,7 @@ import {
   slashCommandQuery,
 } from "../lib/composer-suggestions.ts";
 import { isImeCompositionEvent } from "../lib/composer-keyboard.ts";
+import { attachmentPathsFromDrop, canDropAttachment } from "../lib/composer-attachments.ts";
 import type { AccessMode, AccessVisibility } from "../lib/settings-prefs.ts";
 import { visibleAccessModes } from "../lib/settings-prefs.ts";
 import { cn } from "../lib/utils.ts";
@@ -685,6 +686,7 @@ export function Composer(props: ComposerProps) {
   /** -1 = no highlighted option (no default selected background). */
   const [suggestionIndex, setSuggestionIndex] = useState(-1);
   const [suggestionsDismissed, setSuggestionsDismissed] = useState(false);
+  const [dropActive, setDropActive] = useState(false);
   const workspace = workspaceLabel(props.workspacePath);
   const [gitContext, setGitContext] = useState<GitContextInfo>({});
 
@@ -1157,16 +1159,32 @@ export function Composer(props: ComposerProps) {
     }
   }
 
+  function handleComposerDragEnter(event: DragEvent<HTMLTextAreaElement>) {
+    if (!canDropAttachment(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  }
+
+  function handleComposerDragOver(event: DragEvent<HTMLTextAreaElement>) {
+    if (!canDropAttachment(event.dataTransfer)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    setDropActive(true);
+  }
+
+  function handleComposerDragLeave() {
+    setDropActive(false);
+  }
+
   function handleComposerDrop(event: DragEvent<HTMLTextAreaElement>) {
-    const files = event.dataTransfer?.files;
-    if (!files?.length) return;
+    if (!canDropAttachment(event.dataTransfer)) return;
     event.preventDefault();
     event.stopPropagation();
-    const paths: string[] = [];
-    for (const file of files) {
-      const filePath = window.pix.workspace.pathForFile(file);
-      if (typeof filePath === "string" && filePath) paths.push(filePath);
-    }
+    setDropActive(false);
+    const paths = attachmentPathsFromDrop(event.dataTransfer, (file) =>
+      window.pix.workspace.pathForFile(file),
+    );
     if (paths.length) props.onAddAttachments?.(paths);
   }
 
@@ -1339,6 +1357,7 @@ export function Composer(props: ComposerProps) {
       <form
         ref={composerCardRef}
         className={cn("composer-card", showProjectBar && "composer-card-with-protrusion")}
+        data-drop-active={dropActive ? "true" : undefined}
         onSubmit={(event) => props.onSubmit(event)}
       >
         {props.attachments.length > 0 ? (
@@ -1361,12 +1380,9 @@ export function Composer(props: ComposerProps) {
             requestAnimationFrame(() => fitComposerPromptHeight(props.composerRef.current));
           }}
           onDrop={handleComposerDrop}
-          onDragOver={(event) => {
-            if (event.dataTransfer?.types?.includes("Files")) {
-              event.preventDefault();
-              event.dataTransfer.dropEffect = "copy";
-            }
-          }}
+          onDragEnter={handleComposerDragEnter}
+          onDragOver={handleComposerDragOver}
+          onDragLeave={handleComposerDragLeave}
           onInput={() => fitComposerPromptHeight(props.composerRef.current)}
           placeholder={tr("composer.placeholder")}
           rows={COMPOSER_PROMPT_MIN_LINES}

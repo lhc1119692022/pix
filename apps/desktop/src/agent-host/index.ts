@@ -265,9 +265,12 @@ function projectRuntimeEvent(event: AgentSessionEvent): RuntimeEvent | undefined
       if (stopReason === "stop" || stopReason === "length" || stopReason === "toolUse") {
         return { type: "message.completed", reason: stopReason };
       }
+      // pi 0.83 adds "pending" for partial streaming messages. Pix's IPC
+      // contract has no pending state yet, so keep it on the failure path.
+      const failureReason = stopReason === "aborted" ? "aborted" : "error";
       return {
         type: "message.failed",
-        reason: stopReason,
+        reason: failureReason,
         message: event.message.errorMessage ?? `Model response ${stopReason}`,
       };
     }

@@ -199,7 +199,7 @@ describe("P03 git package transport", () => {
     expect(manager.getInstalledPath(globalV2, "user")).toBeUndefined();
   }, 60_000);
 
-  it("recovers a retained clone after an injected dependency-install failure", async () => {
+  it("recovers after an injected dependency-install failure", async () => {
     const root = await mkdtemp(join(tmpdir(), "pix-pkg-git-dependency-"));
     temporaryDirectories.push(root);
     const agentDir = join(root, "home", ".pi", "agent");
@@ -249,7 +249,8 @@ process.exit(result.status ?? 1);
     await expect(manager.installAndPersist(source)).rejects.toThrow();
     expect(settings.getPackages()).toEqual([]);
     expect(progress.filter((event) => event.source === source).at(-1)?.type).toBe("error");
-    expect(manager.getInstalledPath(source, "user")).toBeTruthy();
+    // pi 0.83 removes partial clones so a retry starts from a clean checkout.
+    expect(manager.getInstalledPath(source, "user")).toBeUndefined();
 
     await manager.installAndPersist(source);
     await settings.flush();

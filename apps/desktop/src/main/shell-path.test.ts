@@ -9,6 +9,8 @@ import {
   mergePathDirs,
 } from "./shell-path.ts";
 
+const itUnixOnly = process.platform === "win32" ? it.skip : it;
+
 describe("shell-path", () => {
   it("mergePathDirs prepends extras and dedupes", () => {
     const sep = process.platform === "win32" ? ";" : ":";
@@ -28,7 +30,7 @@ describe("shell-path", () => {
     expect(env.PATH).toContain("/bin");
   });
 
-  it("candidateCommandPaths finds binaries under a home bin dir", () => {
+  itUnixOnly("candidateCommandPaths finds binaries under a home bin dir", () => {
     const root = mkdtempSync(join(tmpdir(), "pix-shell-path-"));
     const bin = join(root, ".local", "bin");
     mkdirSync(bin, { recursive: true });

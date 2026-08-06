@@ -82,8 +82,11 @@ describe("C01 fresh pi home", () => {
     expect(snapshot.resources.contextFiles).toBe(0);
     expect(snapshot.configuredPackages).toEqual({ global: 0, project: 0 });
 
-    // AuthStorage initializes pi's native empty auth file; no Pix-owned data may appear.
-    expect(after.filter((path) => !before.includes(path))).toEqual(["home/.pi/agent/auth.json"]);
+    // Pi 0.84 initializes both its native auth and model-catalog stores; no Pix-owned data may
+    // appear in a fresh agent directory.
+    expect(after.filter((path) => !before.includes(path)).sort()).toEqual(
+      ["home/.pi/agent/auth.json", "home/.pi/agent/models-store.json"].sort(),
+    );
     expect(JSON.parse(await readFile(join(agentDir, "auth.json"), "utf8"))).toEqual({});
     expect((await readFile(join(agentDir, "auth.json"), "utf8")).toLowerCase()).not.toContain(
       "pix",

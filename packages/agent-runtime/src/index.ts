@@ -431,6 +431,27 @@ function formatExtensionError(error: ExtensionError): SnapshotDiagnostic {
   };
 }
 
+type ModelsRefreshResult = Awaited<ReturnType<AgentSessionServices["modelRuntime"]["refresh"]>>;
+
+function projectModelRefreshDiagnostics(result: ModelsRefreshResult): SnapshotDiagnostic[] {
+  const diagnostics: SnapshotDiagnostic[] = [];
+  if (result.aborted) {
+    diagnostics.push({
+      type: "warning",
+      message: "Model catalog refresh was cancelled; using cached models.",
+    });
+  }
+  for (const [provider, error] of result.errors) {
+    diagnostics.push({
+      type: "warning",
+      message: redactDiagnosticMessage(
+        `Model catalog ${provider} failed to refresh: ${error.message}`,
+      ),
+    });
+  }
+  return diagnostics;
+}
+
 function textFromMessageContent(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
@@ -1490,6 +1511,7 @@ export async function createPixRuntime(
   const runtimeId = randomUUID();
   const extensionErrors: ExtensionError[] = [];
   const configDiagnostics: SnapshotDiagnostic[] = [];
+  const modelRefreshDiagnostics: SnapshotDiagnostic[] = [];
   const temporaryExtensionPaths: string[] = [];
   const extensionUi = createPortableExtensionUiBridge({
     runtimeId,
@@ -1586,6 +1608,15 @@ export async function createPixRuntime(
     sessionManager,
   });
 
+  function recordModelRefreshResult(result: ModelsRefreshResult): void {
+    modelRefreshDiagnostics.length = 0;
+    modelRefreshDiagnostics.push(...projectModelRefreshDiagnostics(result));
+  }
+
+  function combinedConfigDiagnostics(): SnapshotDiagnostic[] {
+    return [...configDiagnostics, ...modelRefreshDiagnostics];
+  }
+
   async function bindExtensionUi(): Promise<void> {
     await runtime.session.bindExtensions({
       uiContext: extensionUi.uiContext,
@@ -1651,15 +1682,16 @@ export async function createPixRuntime(
         runtime.services,
         sequence,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       ),
     respondExtensionUi: (response) => extensionUi.respond(response),
     async reload() {
       await reloadSessionResources();
       // Replace config diagnostics after reload so repaired files clear old errors.
       configDiagnostics.length = 0;
-      await runtime.services.modelRuntime.refresh();
+      const refreshResult = await runtime.services.modelRuntime.refresh();
       configDiagnostics.push(...collectConfigDiagnostics(runtime.services));
+      recordModelRefreshResult(refreshResult);
     },
     async listSessions() {
       const fromDisk = await listProjectSessions(runtime.services.cwd, {
@@ -1774,7 +1806,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     listModels() {
@@ -1791,7 +1823,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     setThinkingLevel(level) {
@@ -1815,7 +1847,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     setServiceTier(tier) {
@@ -1832,7 +1864,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     listProviders() {
@@ -1883,7 +1915,7 @@ export async function createPixRuntime(
           // ignore
         }
       }
-      await runtime.services.modelRuntime.refresh();
+      recordModelRefreshResult(await runtime.services.modelRuntime.refresh());
       // Keep current process configured even if AuthStorage has not re-read auth.json yet.
       if (apiKey) {
         await runtime.services.modelRuntime.setRuntimeApiKey(providerId, apiKey);
@@ -1902,7 +1934,7 @@ export async function createPixRuntime(
       } catch {
         // ignore
       }
-      await runtime.services.modelRuntime.refresh();
+      recordModelRefreshResult(await runtime.services.modelRuntime.refresh());
       return config;
     },
     async removeCustomModel(provider, modelId) {
@@ -1921,7 +1953,7 @@ export async function createPixRuntime(
           // ignore
         }
       }
-      await runtime.services.modelRuntime.refresh();
+      recordModelRefreshResult(await runtime.services.modelRuntime.refresh());
       return config;
     },
     getPiSettings() {
@@ -1957,7 +1989,7 @@ export async function createPixRuntime(
           runtime.services,
           0,
           extensionErrors,
-          configDiagnostics,
+          combinedConfigDiagnostics(),
         ),
         // pi: navigating to a user message rewinds to its parent and returns text for the editor
         ...(typeof result.editorText === "string" ? { editorText: result.editorText } : {}),
@@ -1971,7 +2003,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     setSessionName(name) {
@@ -1982,7 +2014,7 @@ export async function createPixRuntime(
         runtime.services,
         0,
         extensionErrors,
-        configDiagnostics,
+        combinedConfigDiagnostics(),
       );
     },
     getSessionName() {
@@ -2123,7 +2155,7 @@ export async function createPixRuntime(
           runtime.services,
           0,
           extensionErrors,
-          configDiagnostics,
+          combinedConfigDiagnostics(),
         ),
       };
     },
@@ -2142,7 +2174,7 @@ export async function createPixRuntime(
       });
     },
     async refreshModelCatalog() {
-      await runtime.services.modelRuntime.refresh();
+      recordModelRefreshResult(await runtime.services.modelRuntime.refresh());
       return projectModelSummaries(runtime.services);
     },
     async completeText(prompt, options) {
@@ -2426,52 +2458,6 @@ function projectSettingsInventory(
   });
 }
 
-/**
- * pi-ai `builtinProviders()` catalog (keep in sync with @earendil-works/pi-ai).
- * Providers outside this set (e.g. models.json custom names, extension providers)
- * are treated as user-defined.
- */
-const PI_BUILTIN_PROVIDERS = new Set<string>([
-  "amazon-bedrock",
-  "ant-ling",
-  "anthropic",
-  "azure-openai-responses",
-  "cerebras",
-  "cloudflare-ai-gateway",
-  "cloudflare-workers-ai",
-  "deepseek",
-  "fireworks",
-  "github-copilot",
-  "google",
-  "google-vertex",
-  "groq",
-  "huggingface",
-  "kimi-coding",
-  "minimax",
-  "minimax-cn",
-  "mistral",
-  "moonshotai",
-  "moonshotai-cn",
-  "nvidia",
-  "openai",
-  "openai-codex",
-  "opencode",
-  "opencode-go",
-  "openrouter",
-  "qwen-token-plan",
-  "qwen-token-plan-cn",
-  "radius",
-  "together",
-  "vercel-ai-gateway",
-  "xai",
-  "xiaomi",
-  "xiaomi-token-plan-ams",
-  "xiaomi-token-plan-cn",
-  "xiaomi-token-plan-sgp",
-  "zai",
-  "zai-coding-cn",
-]);
-
 function classifyModelSource(
   provider: string,
   services: AgentSessionServices,
@@ -2489,7 +2475,9 @@ function classifyModelSource(
   } catch {
     // older runtimes without the method
   }
-  return PI_BUILTIN_PROVIDERS.has(id) ? "builtin" : "custom";
+  // Anything left came from pi's native provider catalog. Avoid mirroring pi's
+  // builtin provider ids here so new native providers remain native in Pix.
+  return "builtin";
 }
 
 /**

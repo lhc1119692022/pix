@@ -94,8 +94,6 @@ import {
   TERMINAL_FONT_SIZE_MAX,
   TERMINAL_FONT_SIZE_MIN,
   TERMINAL_LINE_HEIGHT_OPTIONS,
-  TERMINAL_SCROLLBACK_MAX,
-  TERMINAL_SCROLLBACK_MIN,
   type TerminalColorScheme,
   type TerminalCursorStyle,
   type TerminalPrefs,
@@ -118,8 +116,18 @@ import {
 } from "../../lib/settings-prefs.ts";
 import { applyDiscoverResults } from "../../lib/proxy-discover-ui.ts";
 import {
+  listInstalledCodeFonts,
+  listInstalledUiFonts,
+  matchAppearanceFontChoiceId,
+  SYSTEM_APPEARANCE_FONT_ID,
+  type AppearanceFontChoice,
+} from "../../lib/appearance-fonts.ts";
+import {
   CODE_FONT_SIZE_MAX,
   CODE_FONT_SIZE_MIN,
+  DEFAULT_APPEARANCE_PREFS,
+  DEFAULT_CODE_FONT_FAMILY,
+  DEFAULT_UI_FONT_FAMILY,
   loadAppearancePrefs,
   patchAppearancePrefs,
   UI_FONT_SIZE_MAX,
@@ -1964,10 +1972,7 @@ function TerminalSection(
         />
         <SettingsRow
           title={tr("terminal.fontSize")}
-          description={tr("terminal.fontSizeHint", {
-            min: String(TERMINAL_FONT_SIZE_MIN),
-            max: String(TERMINAL_FONT_SIZE_MAX),
-          })}
+          description={tr("terminal.fontSizeHint")}
           control={
             <SettingsSelect
               value={String(prefs.fontSize)}
@@ -2039,10 +2044,7 @@ function TerminalSection(
       <SettingsSectionBlock label={tr("terminal.group.scroll")} testId="settings-terminal-scroll">
         <SettingsRow
           title={tr("terminal.scrollback")}
-          description={tr("terminal.scrollbackHint", {
-            min: String(TERMINAL_SCROLLBACK_MIN),
-            max: String(TERMINAL_SCROLLBACK_MAX),
-          })}
+          description={tr("terminal.scrollbackHint")}
           control={
             <SettingsSelect
               value={String(prefs.scrollback)}
@@ -2472,11 +2474,6 @@ function GeneralSection(
               aria-label={tr("settings.suggestions")}
             />
           }
-        />
-        <SettingsRow
-          title={tr("settings.importAgent")}
-          description={tr("settings.importAgentHint")}
-          control={<SettingsPillButton label={tr("settings.importAgain")} disabled />}
           last
         />
       </SettingsSectionBlock>
@@ -2507,6 +2504,22 @@ function AppearanceSection(
   const [prefs, setPrefs] = useState<AppearancePrefs>(loadAppearancePrefs);
   const [appScale, setAppScale] = useState(100);
   const appScaleRequestRef = useRef(0);
+  const [uiFontChoices, setUiFontChoices] = useState<AppearanceFontChoice[]>(() => [
+    {
+      id: SYSTEM_APPEARANCE_FONT_ID,
+      family: DEFAULT_UI_FONT_FAMILY,
+      label: tr("appearance.font.system"),
+    },
+  ]);
+  const [codeFontChoices, setCodeFontChoices] = useState<AppearanceFontChoice[]>(() => [
+    {
+      id: SYSTEM_APPEARANCE_FONT_ID,
+      family: DEFAULT_CODE_FONT_FAMILY,
+      label: tr("appearance.font.system"),
+    },
+  ]);
+  const [uiFontsLoading, setUiFontsLoading] = useState(true);
+  const [codeFontsLoading, setCodeFontsLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -2521,6 +2534,28 @@ function AppearanceSection(
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setUiFontsLoading(true);
+    setCodeFontsLoading(true);
+    const systemLabel = tr("appearance.font.system");
+    void listInstalledUiFonts(systemLabel).then((list) => {
+      if (cancelled) return;
+      setUiFontChoices(list);
+      setUiFontsLoading(false);
+    });
+    void listInstalledCodeFonts(systemLabel).then((list) => {
+      if (cancelled) return;
+      setCodeFontChoices(list);
+      setCodeFontsLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // Re-scan when locale label for "system" changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tr identity is unstable; use locale
+  }, [props.locale]);
 
   function update(patch: Partial<AppearancePrefs>) {
     setPrefs(patchAppearancePrefs(patch));
@@ -2539,17 +2574,52 @@ function AppearanceSection(
       .catch(() => undefined);
   }
 
-  const uiFontOptions = Array.from({ length: UI_FONT_SIZE_MAX - UI_FONT_SIZE_MIN + 1 }, (_, i) => {
-    const n = UI_FONT_SIZE_MIN + i;
-    return { value: String(n), label: `${n}px` };
-  });
-  const codeFontOptions = Array.from(
+  const uiFontSizeOptions = Array.from(
+    { length: UI_FONT_SIZE_MAX - UI_FONT_SIZE_MIN + 1 },
+    (_, i) => {
+      const n = UI_FONT_SIZE_MIN + i;
+      return { value: String(n), label: `${n}px` };
+    },
+  );
+  const codeFontSizeOptions = Array.from(
     { length: CODE_FONT_SIZE_MAX - CODE_FONT_SIZE_MIN + 1 },
     (_, i) => {
       const n = CODE_FONT_SIZE_MIN + i;
       return { value: String(n), label: `${n}px` };
     },
   );
+
+  const uiFontChoiceId = matchAppearanceFontChoiceId(
+    prefs.uiFontFamily,
+    uiFontChoices,
+    DEFAULT_UI_FONT_FAMILY,
+  );
+  const uiFontFamilyOptions = uiFontChoices.map((c) => ({
+    value: c.id,
+    label: c.id === SYSTEM_APPEARANCE_FONT_ID ? tr("appearance.font.system") : c.label,
+  }));
+  if (
+    uiFontChoiceId !== SYSTEM_APPEARANCE_FONT_ID &&
+    !uiFontFamilyOptions.some((o) => o.value === uiFontChoiceId)
+  ) {
+    uiFontFamilyOptions.push({ value: uiFontChoiceId, label: uiFontChoiceId });
+  }
+
+  const codeFontChoiceId = matchAppearanceFontChoiceId(
+    prefs.codeFontFamily,
+    codeFontChoices,
+    DEFAULT_CODE_FONT_FAMILY,
+  );
+  const codeFontFamilyOptions = codeFontChoices.map((c) => ({
+    value: c.id,
+    label: c.id === SYSTEM_APPEARANCE_FONT_ID ? tr("appearance.font.system") : c.label,
+  }));
+  if (
+    codeFontChoiceId !== SYSTEM_APPEARANCE_FONT_ID &&
+    !codeFontFamilyOptions.some((o) => o.value === codeFontChoiceId)
+  ) {
+    codeFontFamilyOptions.push({ value: codeFontChoiceId, label: codeFontChoiceId });
+  }
 
   return (
     <SettingsPageShell title={tr("section.appearance")} testId="settings-appearance">
@@ -2587,10 +2657,7 @@ function AppearanceSection(
       <SettingsSectionBlock label={tr("appearance.appScaleSection")}>
         <SettingsRow
           title={tr("appearance.appScale")}
-          description={tr("appearance.appScaleHint", {
-            min: String(APP_SCALE_MIN),
-            max: String(APP_SCALE_MAX),
-          })}
+          description={tr("appearance.appScaleHint")}
           control={
             <SettingsSelect
               value={String(appScale)}
@@ -2612,32 +2679,88 @@ function AppearanceSection(
         testId="settings-appearance-typography"
       >
         <SettingsRow
+          title={tr("appearance.uiFontFamily")}
+          description={
+            uiFontsLoading
+              ? tr("appearance.uiFontFamilyLoading")
+              : tr("appearance.uiFontFamilyHint")
+          }
+          control={
+            <SettingsSelect
+              value={uiFontChoiceId}
+              onChange={(id) => {
+                const choice = uiFontChoices.find((c) => c.id === id);
+                if (choice) {
+                  update({ uiFontFamily: choice.family });
+                  return;
+                }
+                if (id && id !== SYSTEM_APPEARANCE_FONT_ID) {
+                  update({
+                    uiFontFamily: `"${id.replace(/"/g, "")}", system-ui, sans-serif`,
+                  });
+                } else {
+                  update({ uiFontFamily: DEFAULT_APPEARANCE_PREFS.uiFontFamily });
+                }
+              }}
+              options={uiFontFamilyOptions}
+              testId="appearance-ui-font-family"
+              size="lg"
+              disabled={uiFontsLoading && uiFontChoices.length <= 1}
+            />
+          }
+        />
+        <SettingsRow
           title={tr("appearance.uiFontSize")}
-          description={tr("appearance.uiFontSizeHint", {
-            min: String(UI_FONT_SIZE_MIN),
-            max: String(UI_FONT_SIZE_MAX),
-          })}
+          description={tr("appearance.uiFontSizeHint")}
           control={
             <SettingsSelect
               value={String(prefs.uiFontSize)}
               onChange={(v) => update({ uiFontSize: Number(v) })}
-              options={uiFontOptions}
+              options={uiFontSizeOptions}
               testId="appearance-ui-font-size"
               size="sm"
             />
           }
         />
         <SettingsRow
+          title={tr("appearance.codeFontFamily")}
+          description={
+            codeFontsLoading
+              ? tr("appearance.codeFontFamilyLoading")
+              : tr("appearance.codeFontFamilyHint")
+          }
+          control={
+            <SettingsSelect
+              value={codeFontChoiceId}
+              onChange={(id) => {
+                const choice = codeFontChoices.find((c) => c.id === id);
+                if (choice) {
+                  update({ codeFontFamily: choice.family });
+                  return;
+                }
+                if (id && id !== SYSTEM_APPEARANCE_FONT_ID) {
+                  update({
+                    codeFontFamily: `"${id.replace(/"/g, "")}", ui-monospace, monospace`,
+                  });
+                } else {
+                  update({ codeFontFamily: DEFAULT_APPEARANCE_PREFS.codeFontFamily });
+                }
+              }}
+              options={codeFontFamilyOptions}
+              testId="appearance-code-font-family"
+              size="lg"
+              disabled={codeFontsLoading && codeFontChoices.length <= 1}
+            />
+          }
+        />
+        <SettingsRow
           title={tr("appearance.codeFontSize")}
-          description={tr("appearance.codeFontSizeHint", {
-            min: String(CODE_FONT_SIZE_MIN),
-            max: String(CODE_FONT_SIZE_MAX),
-          })}
+          description={tr("appearance.codeFontSizeHint")}
           control={
             <SettingsSelect
               value={String(prefs.codeFontSize)}
               onChange={(v) => update({ codeFontSize: Number(v) })}
-              options={codeFontOptions}
+              options={codeFontSizeOptions}
               testId="appearance-code-font-size"
               size="sm"
             />

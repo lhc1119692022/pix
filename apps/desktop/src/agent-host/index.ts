@@ -265,14 +265,20 @@ function projectRuntimeEvent(event: AgentSessionEvent): RuntimeEvent | undefined
       if (stopReason === "stop" || stopReason === "length" || stopReason === "toolUse") {
         return { type: "message.completed", reason: stopReason };
       }
-      // pi 0.83+ adds "pending" for partial streaming messages. Pix's IPC
-      // contract has no pending state yet, so keep it on the failure path.
-      const failureReason = stopReason === "aborted" ? "aborted" : "error";
-      return {
-        type: "message.failed",
-        reason: failureReason,
-        message: event.message.errorMessage ?? `Model response ${stopReason}`,
-      };
+      // Pass through pi StopReason as-is (pending/deferred/aborted/error).
+      if (
+        stopReason === "aborted" ||
+        stopReason === "error" ||
+        stopReason === "pending" ||
+        stopReason === "deferred"
+      ) {
+        return {
+          type: "message.failed",
+          reason: stopReason,
+          message: event.message.errorMessage ?? `Model response ${stopReason}`,
+        };
+      }
+      return undefined;
     }
     case "entry_appended": {
       const { entry } = event;

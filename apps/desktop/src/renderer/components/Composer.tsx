@@ -1310,7 +1310,7 @@ export function Composer(props: ComposerProps) {
               type="button"
               data-testid="composer-project-picker"
               aria-expanded={projectMenuOpen}
-              className="inline-flex min-w-0 max-w-[42%] items-center gap-1.5 text-[var(--foreground)]"
+              className="composer-protrusion-chip max-w-[42%]"
               onClick={(e) => openMenu("project", e)}
             >
               <Folder className="size-3.5 shrink-0 opacity-80" strokeWidth={1.75} />
@@ -1323,7 +1323,7 @@ export function Composer(props: ComposerProps) {
               <>
                 <button
                   type="button"
-                  className="inline-flex min-w-0 max-w-[26%] items-center gap-1.5 text-[var(--foreground)]"
+                  className="composer-protrusion-chip max-w-[26%]"
                   title={localLabel}
                   data-testid="composer-local"
                   aria-expanded={localMenuOpen}
@@ -1335,7 +1335,7 @@ export function Composer(props: ComposerProps) {
                 </button>
                 <button
                   type="button"
-                  className="inline-flex min-w-0 max-w-[26%] items-center gap-1.5 text-[var(--foreground)]"
+                  className="composer-protrusion-chip max-w-[26%]"
                   title={tr("composer.project.branch")}
                   data-testid="composer-git-branch"
                   aria-expanded={branchMenuOpen}
@@ -1448,19 +1448,27 @@ export function Composer(props: ComposerProps) {
             <button
               type="button"
               data-testid="model-select-wrap"
+              title={
+                thinkingSupported
+                  ? `${modelLabel} ${thinkingLevelLabel(props.locale, props.thinkingLevel)}`
+                  : modelLabel
+              }
               className={cn(
-                "inline-flex h-8 max-w-[10rem] items-center gap-1 rounded-full px-2",
+                "inline-flex h-8 min-w-0 max-w-[14rem] items-center gap-2 rounded-full px-2",
                 "text-[12px] text-[var(--muted-foreground)] hover:bg-[var(--hover-fill)] hover:text-[var(--foreground)]",
                 !props.modelOptions.length && !props.modelValue && "opacity-50",
               )}
               disabled={props.running}
               onClick={(e) => openMenu("model", e)}
             >
-              <Sparkles className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} />
               <span className="min-w-0 truncate" data-testid="model-select-label">
                 {modelLabel}
               </span>
-              <ChevronDown className="size-3 shrink-0 opacity-50" strokeWidth={2} />
+              {thinkingSupported ? (
+                <span className="shrink-0 opacity-70" data-testid="model-thinking-label">
+                  {thinkingLevelLabel(props.locale, props.thinkingLevel)}
+                </span>
+              ) : null}
             </button>
             {/* hidden native selects for e2e/compat */}
             <select
@@ -1753,7 +1761,7 @@ export function Composer(props: ComposerProps) {
             className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--foreground)] outline-none placeholder:text-[var(--text-subtle)]"
           />
         </div>
-        <div className="pix-scroll max-h-[220px] overscroll-contain py-0.5">
+        <div className="pix-scroll max-h-[220px] overscroll-contain p-1.5 pt-0.5">
           {filteredProjects.length === 0 ? (
             <p className="px-3 py-3 text-[12px] text-[var(--text-subtle)]">
               {tr("composer.project.empty")}
@@ -1771,10 +1779,9 @@ export function Composer(props: ComposerProps) {
                   role="menuitem"
                   data-testid="composer-project-item"
                   className={cn(
-                    "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] transition-colors",
-                    active
-                      ? "bg-[var(--accent)] text-[var(--foreground)]"
-                      : "text-[var(--foreground)] hover:bg-[var(--hover-fill)]",
+                    "flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 py-1.5 text-left text-[13px] text-[var(--foreground)] transition-colors",
+                    "hover:bg-[var(--hover-fill)]",
+                    active && "bg-[var(--hover-fill)] font-medium",
                   )}
                   onClick={() => {
                     closeMenu();
@@ -1783,17 +1790,20 @@ export function Composer(props: ComposerProps) {
                 >
                   <Folder className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} />
                   <span className="min-w-0 flex-1 truncate">{label.name}</span>
+                  {active ? (
+                    <Check className="size-3.5 shrink-0 opacity-80" strokeWidth={2} />
+                  ) : null}
                 </button>
               );
             })
           )}
         </div>
-        <div className="border-t border-[var(--border)]">
+        <div className="border-t border-[var(--border)] p-1.5">
           <button
             type="button"
             role="menuitem"
             data-testid="composer-project-add"
-            className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-[var(--foreground)] transition-colors hover:bg-[var(--hover-fill)]"
+            className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 py-2 text-left text-[13px] text-[var(--foreground)] transition-colors hover:bg-[var(--hover-fill)]"
             onClick={() => {
               closeMenu();
               props.onAddProject();
@@ -1909,7 +1919,7 @@ export function Composer(props: ComposerProps) {
             className="min-w-0 flex-1 border-0 bg-transparent text-[13px] text-[var(--foreground)] outline-none placeholder:text-[var(--text-subtle)] disabled:opacity-50"
           />
         </div>
-        <div className="pix-scroll max-h-[260px] overscroll-contain py-0.5">
+        <div className="pix-scroll max-h-[260px] overscroll-contain p-1.5 pt-0.5">
           {branchesLoading ? (
             <p className="px-3 py-3 text-[12px] text-[var(--text-subtle)]">
               {tr("composer.branch.loading")}
@@ -1927,10 +1937,9 @@ export function Composer(props: ComposerProps) {
                 data-testid="composer-branch-item"
                 disabled={gitBusy}
                 className={cn(
-                  "flex w-full items-center gap-2.5 px-3 py-1.5 text-left text-[13px] transition-colors disabled:opacity-50",
-                  branch.current
-                    ? "bg-[var(--accent)] text-[var(--foreground)]"
-                    : "text-[var(--foreground)] hover:bg-[var(--hover-fill)]",
+                  "flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 py-1.5 text-left text-[13px] text-[var(--foreground)] transition-colors disabled:opacity-50",
+                  "hover:bg-[var(--hover-fill)]",
+                  branch.current && "bg-[var(--hover-fill)] font-medium",
                 )}
                 onClick={() => {
                   if (!branch.current) void handleCheckoutBranch(branch.name);
@@ -1947,13 +1956,13 @@ export function Composer(props: ComposerProps) {
           )}
         </div>
         {canCreateBranch ? (
-          <div className="border-t border-[var(--border)]">
+          <div className="border-t border-[var(--border)] p-1.5">
             <button
               type="button"
               role="menuitem"
               data-testid="composer-branch-create"
               disabled={gitBusy}
-              className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-[13px] text-[var(--foreground)] transition-colors hover:bg-[var(--hover-fill)] disabled:opacity-50"
+              className="flex w-full items-center gap-2.5 rounded-[var(--radius-control)] px-2.5 py-2 text-left text-[13px] text-[var(--foreground)] transition-colors hover:bg-[var(--hover-fill)] disabled:opacity-50"
               onClick={() => void handleCreateCheckoutBranch()}
             >
               <Plus className="size-3.5 shrink-0 opacity-80" strokeWidth={2} />

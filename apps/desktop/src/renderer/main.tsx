@@ -27,7 +27,10 @@ import { CommandPalette } from "./components/CommandPalette.tsx";
 import { Composer } from "./components/Composer.tsx";
 import { ConfirmDialog } from "./components/ConfirmDialog.tsx";
 import { ErrorDialog } from "./components/ErrorDialog.tsx";
+import { ExtensionUiChrome } from "./components/ExtensionUiChrome.tsx";
+import { ExtensionUiHost } from "./components/ExtensionUiHost.tsx";
 import { ProjectTrustDialog } from "./components/ProjectTrustDialog.tsx";
+import { ProjectsPage } from "./components/ProjectsPage.tsx";
 import { SessionInfoPanel, SessionTreePanel } from "./components/SessionParityPanels.tsx";
 import { RenameDialog } from "./components/RenameDialog.tsx";
 import { SettingsPage } from "./components/settings/SettingsPage.tsx";
@@ -72,6 +75,14 @@ import {
   resolveSkinColorMode,
 } from "./lib/theme-packs.ts";
 import { cn } from "./lib/utils.ts";
+import { isExtensionUiDialogMethod, promptExtensionUiDialog } from "./lib/extension-ui-prompt.ts";
+import {
+  applyExtensionUiFireForget,
+  emptyExtensionUiPortableState,
+  isExtensionUiFireForgetMethod,
+  mcpStatusFromExtensionUi,
+  type ExtensionUiPortableState,
+} from "./lib/extension-ui-state.ts";
 import { t, type Locale } from "./lib/i18n.ts";
 import {
   clampToAvailableServiceTier,
@@ -114,6 +125,7 @@ import {
   isNonProjectWorkspacePath,
   mergeRecentWithOpenProject,
   prependRecentPath,
+  threadsForWorkspaceBucket,
   unionRecentWorkspaces,
   workspaceLabel,
 } from "./lib/workspace.ts";
@@ -200,44 +212,31 @@ function maybeMarkUnreadForRuntime(runtimeId: string): void {
   });
 }
 
-function record(value: unknown): Record<string, unknown> | undefined {
-  return typeof value === "object" && value !== null && !Array.isArray(value)
-    ? (value as Record<string, unknown>)
-    : undefined;
-}
-
-function text(value: unknown, fallback = ""): string {
-  return typeof value === "string" ? value : fallback;
-}
-
 async function respondToExtensionUi(event: Extract<HostEvent, { type: "extensionUi.request" }>) {
-  const args = record(event.args);
-  if (!args || !["select", "confirm", "input", "editor"].includes(event.method)) return;
-  let value: unknown;
-  let ok = true;
-  if (event.method === "confirm") {
-    value = window.confirm(`${text(args.title, "Confirm")}\n\n${text(args.message)}`);
-  } else if (event.method === "input" || event.method === "editor") {
-    value = window.prompt(
-      text(args.title, event.method === "editor" ? "Editor" : "Input"),
-      text(event.method === "editor" ? args.prefill : args.placeholder),
-    );
-    ok = value !== null;
-    if (!ok) value = undefined;
-  } else {
-    const options = Array.isArray(args.options)
-      ? args.options.filter((item) => typeof item === "string")
-      : [];
-    value = window.prompt(`${text(args.title, "Select")}\n\n${options.join("\n")}`, options[0]);
-    ok = typeof value === "string" && options.includes(value);
-    if (!ok) value = undefined;
-  }
+  if (!isExtensionUiDialogMethod(event.method)) return;
+  const { ok, value } = await promptExtensionUiDialog({
+    ...event,
+    method: event.method,
+  });
   await window.pix.extensionUi.respond({
     runtimeId: event.runtimeId,
     requestId: event.requestId,
     ok,
     value,
   });
+}
+
+function applyExtensionNotify(
+  notify: { message: string; type: "info" | "warning" | "error" } | undefined,
+): void {
+  if (!notify?.message) return;
+  // Surface in host status strip; escalate error/warning to OS notifications.
+  useShellStore.getState().setStatus(notify.message);
+  if (notify.type === "error") {
+    maybeNotify("error", notify.message);
+  } else if (notify.type === "warning") {
+    maybeNotify("error", notify.message);
+  }
 }
 
 function hostPillState(status: string, running: boolean): string {
@@ -306,6 +305,12 @@ function App() {
   const setContentMode = useShellStore((s) => s.setContentMode);
   /** When false, PiTuiTerminal is unmounted (no previous-session canvas). */
   const [terminalSurfaceActive, setTerminalSurfaceActive] = useState(true);
+  /** Portable extension fire-and-forget chrome (status / widgets / title / working). */
+  const [extensionUiState, setExtensionUiState] = useState<ExtensionUiPortableState>(() =>
+    emptyExtensionUiPortableState(),
+  );
+  const extensionUiStateRef = useRef(extensionUiState);
+  extensionUiStateRef.current = extensionUiState;
   /** Session file the mounted terminal is waiting for (normed path). */
   const transitionSessionRef = useRef<string | null>(null);
   /** Match main-process session keys (macOS /private/var collapse). */
@@ -656,30 +661,49 @@ function App() {
     });
   }
 
+  /**
+   * Write host/disk rows into one cwd bucket. Filters by thread.cwd and never
+   * replaces a non-empty bucket with a raced empty/mismatched list (rapid
+   * project「新建会话」used to poison maps and hide 对话 rows).
+   */
+  function cacheThreadsForCwd(cwd: string, threads: SessionThreadSummary[]) {
+    const key = normalizeCwdKey(cwd);
+    if (!key) return;
+    const matched = threadsForWorkspaceBucket(threads, cwd);
+    if (matched.length === 0) {
+      setThreadsByCwd((prev) => {
+        const existing = prev[key] ?? [];
+        if (existing.length > 0) return prev;
+        return { ...prev, [key]: existing };
+      });
+      return;
+    }
+    setThreadsByCwd((prev) => ({
+      ...prev,
+      [key]: mergeSidebarThreads(prev[key] ?? [], matched),
+    }));
+  }
+
   async function refreshThreads() {
     try {
       const listed = await window.pix.session.list();
-      setThreads(mergeSidebarThreads(useShellStore.getState().threads, listed.threads));
       const cwd = useShellStore.getState().snapshot?.cwd;
-      if (cwd) {
-        setThreadsByCwd((prev) => ({
-          ...prev,
-          [normalizeCwdKey(cwd)]: mergeSidebarThreads(
-            prev[normalizeCwdKey(cwd)] ?? [],
-            listed.threads,
-          ),
-        }));
-      }
+      const matched = cwd ? threadsForWorkspaceBucket(listed.threads, cwd) : listed.threads;
+      setThreads(mergeSidebarThreads(useShellStore.getState().threads, matched));
+      if (cwd) cacheThreadsForCwd(cwd, listed.threads);
     } catch {
       // Host may be stopped.
     }
   }
 
   /**
-   * Optimistically put the open session at the top of the sidebar with a title
-   * from the just-sent user text. Needed because pi defers flushing session JSONL
-   * until the first assistant message — without this, a brand-new conversation
-   * stays invisible (or keeps "(no messages)") for the whole first turn.
+   * Optimistically update the open session title/messageCount after the user sends.
+   * Needed because pi defers flushing session JSONL until the first assistant message
+   * — without this, a brand-new conversation stays invisible (or keeps "(no messages)")
+   * for the whole first turn.
+   *
+   * Preserve list position:「优先级」is import/add order and must not jump on activity.
+   * 「最近更新」reorders at render time via sortThreadsByMode, not here.
    */
   function touchActiveThreadInSidebar(userText: string) {
     const store = useShellStore.getState();
@@ -695,7 +719,8 @@ function App() {
       const match = (row: SessionThreadSummary) =>
         (sessionId && row.id === sessionId) ||
         (sessionPath && row.path.replace(/\\/g, "/") === sessionPath.replace(/\\/g, "/"));
-      const existing = list.find(match);
+      const existingIndex = list.findIndex(match);
+      const existing = existingIndex >= 0 ? list[existingIndex] : undefined;
       const base = (existing?.titleBase ?? existing?.title ?? "").trim();
       const looksDefault =
         !base || base === "(no messages)" || /^Thread\s/i.test(base) || base === newLabel;
@@ -720,8 +745,14 @@ function App() {
             messageCount: 1,
             active: true,
           };
-      const rest = list.filter((row) => !match(row)).map((row) => ({ ...row, active: false }));
-      return [nextRow, ...rest].sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt));
+      if (existingIndex >= 0) {
+        // Existing session: update in place — do not jump to top on activity.
+        return list.map((row, index) =>
+          index === existingIndex ? nextRow : { ...row, active: false },
+        );
+      }
+      // Brand-new session: land at the top of this project's (or 对话) session list only.
+      return [nextRow, ...list.map((row) => ({ ...row, active: false }))];
     };
     setThreads(patch(store.threads));
     if (cwd) {
@@ -734,13 +765,18 @@ function App() {
   }
 
   async function refreshProjectSessions(paths: string[]) {
-    const unique = [...new Set(paths.map(normalizeCwdKey).filter(Boolean))];
+    // Never treat conversation/scratch homes as project buckets.
+    const unique = [
+      ...new Set(
+        paths.map(normalizeCwdKey).filter((cwd) => cwd && !isNonProjectWorkspacePath(cwd)),
+      ),
+    ];
     if (unique.length === 0) return;
     const results = await Promise.all(
       unique.map(async (cwd) => {
         try {
           const threads = await window.pix.session.listForCwd(cwd);
-          return [cwd, threads] as const;
+          return [cwd, threadsForWorkspaceBucket(threads, cwd)] as const;
         } catch {
           return [cwd, [] as SessionThreadSummary[]] as const;
         }
@@ -749,6 +785,11 @@ function App() {
     setThreadsByCwd((prev) => {
       const next = { ...prev };
       for (const [cwd, threads] of results) {
+        // Empty raced result must not wipe a warm project cache.
+        if (threads.length === 0) {
+          if (!next[cwd]?.length) next[cwd] = next[cwd] ?? [];
+          continue;
+        }
         next[cwd] = mergeSidebarThreads(prev[cwd] ?? [], threads);
       }
       return next;
@@ -763,13 +804,8 @@ function App() {
     try {
       const convCwd = await window.pix.workspace.ensureConversation();
       const threads = await window.pix.session.listForCwd(convCwd);
-      setThreadsByCwd((prev) => ({
-        ...prev,
-        [normalizeCwdKey(convCwd)]: mergeSidebarThreads(
-          prev[normalizeCwdKey(convCwd)] ?? [],
-          threads,
-        ),
-      }));
+      // Only accept pure-conversation rows; cacheThreadsForCwd also refuses empty races.
+      cacheThreadsForCwd(convCwd, threadsForWorkspaceBucket(threads, convCwd));
     } catch {
       // Host may be stopped or conversation home unavailable.
     }
@@ -918,6 +954,16 @@ function App() {
         const store = useShellStore.getState();
         if (event.type === "host.ready" || event.type === "runtime.snapshot") {
           store.acceptSnapshot(event.snapshot);
+          // New runtime → drop previous extension chrome (status/widgets/title).
+          if (
+            event.snapshot.runtimeId &&
+            extensionUiStateRef.current.runtimeId &&
+            event.snapshot.runtimeId !== extensionUiStateRef.current.runtimeId
+          ) {
+            const cleared = emptyExtensionUiPortableState(event.snapshot.runtimeId);
+            extensionUiStateRef.current = cleared;
+            setExtensionUiState(cleared);
+          }
           // Host up → refresh pi-home status (packages / resources), project or not.
           if (event.type === "host.ready") void refreshPiStatus({ ensure: false });
         } else if (event.type === "host.restarted") {
@@ -925,6 +971,11 @@ function App() {
           // Clear busy markers bound to the previous runtime (e.g. abort-timeout recycle).
           store.settleSessionByRuntime(event.previousRuntimeId, "aborted");
           store.setStatus("Agent Host restarted");
+          {
+            const cleared = emptyExtensionUiPortableState(event.snapshot.runtimeId);
+            extensionUiStateRef.current = cleared;
+            setExtensionUiState(cleared);
+          }
           void refreshPiStatus({ ensure: false });
         } else if (event.type === "host.crashed") {
           // Background (parked) host death must not wipe the foreground session.
@@ -933,30 +984,24 @@ function App() {
             return;
           }
           store.resetAfterCrash(event.message);
+          {
+            const cleared = emptyExtensionUiPortableState();
+            extensionUiStateRef.current = cleared;
+            setExtensionUiState(cleared);
+          }
           maybeNotify("crash", event.message);
         } else if (event.type === "session.list") {
-          store.setThreads(mergeSidebarThreads(store.threads, event.threads));
           const cwd = store.snapshot?.cwd;
-          if (cwd && event.threads.length > 0) {
-            const key = normalizeCwdKey(cwd);
-            setThreadsByCwd((prev) => ({
-              ...prev,
-              [key]: mergeSidebarThreads(prev[key] ?? [], event.threads),
-            }));
-          }
+          const matched = cwd ? threadsForWorkspaceBucket(event.threads, cwd) : event.threads;
+          store.setThreads(mergeSidebarThreads(store.threads, matched));
+          if (cwd && matched.length > 0) cacheThreadsForCwd(cwd, matched);
         } else if (event.type === "session.opened") {
           // switchThread / newBlankTask apply the open themselves. Intermediate
           // session.opened (e.g. from workspace.openPath) must not wipe history into
           // an empty hero flash mid-transition.
           if (switchingSessionRef.current || pendingPureConversationRef.current) {
             const cwd = event.snapshot.cwd;
-            if (cwd && event.threads.length > 0) {
-              const key = normalizeCwdKey(cwd);
-              setThreadsByCwd((prev) => ({
-                ...prev,
-                [key]: mergeSidebarThreads(prev[key] ?? [], event.threads),
-              }));
-            }
+            if (cwd && event.threads.length > 0) cacheThreadsForCwd(cwd, event.threads);
             return;
           }
           markSessionOpenForBottomScroll();
@@ -964,13 +1009,7 @@ function App() {
           requestContentReveal();
           // Keep sidebar caches in sync without clearing other projects' lists.
           const cwd = event.snapshot.cwd;
-          if (cwd && event.threads.length > 0) {
-            const key = normalizeCwdKey(cwd);
-            setThreadsByCwd((prev) => ({
-              ...prev,
-              [key]: mergeSidebarThreads(prev[key] ?? [], event.threads),
-            }));
-          }
+          if (cwd && event.threads.length > 0) cacheThreadsForCwd(cwd, event.threads);
         } else if (event.type === "packages.progress") {
           if (event.message) store.setStatus(event.message);
         } else if (event.type === "packages.changed") {
@@ -1113,19 +1152,14 @@ function App() {
               .list()
               .then((listed) => {
                 if (!listed?.threads) return;
+                const cwd = useShellStore.getState().snapshot?.cwd;
+                const matched = cwd
+                  ? threadsForWorkspaceBucket(listed.threads, cwd)
+                  : listed.threads;
                 useShellStore
                   .getState()
-                  .setThreads(
-                    mergeSidebarThreads(useShellStore.getState().threads, listed.threads),
-                  );
-                const cwd = useShellStore.getState().snapshot?.cwd;
-                if (cwd && listed.threads.length > 0) {
-                  const key = normalizeCwdKey(cwd);
-                  setThreadsByCwd((prev) => ({
-                    ...prev,
-                    [key]: mergeSidebarThreads(prev[key] ?? [], listed.threads),
-                  }));
-                }
+                  .setThreads(mergeSidebarThreads(useShellStore.getState().threads, matched));
+                if (cwd && matched.length > 0) cacheThreadsForCwd(cwd, matched);
               })
               .catch(() => undefined);
           } else if (event.event.type === "user.message") {
@@ -1134,19 +1168,14 @@ function App() {
               .list()
               .then((listed) => {
                 if (!listed?.threads) return;
+                const cwd = useShellStore.getState().snapshot?.cwd;
+                const matched = cwd
+                  ? threadsForWorkspaceBucket(listed.threads, cwd)
+                  : listed.threads;
                 useShellStore
                   .getState()
-                  .setThreads(
-                    mergeSidebarThreads(useShellStore.getState().threads, listed.threads),
-                  );
-                const cwd = useShellStore.getState().snapshot?.cwd;
-                if (cwd && listed.threads.length > 0) {
-                  const key = normalizeCwdKey(cwd);
-                  setThreadsByCwd((prev) => ({
-                    ...prev,
-                    [key]: mergeSidebarThreads(prev[key] ?? [], listed.threads),
-                  }));
-                }
+                  .setThreads(mergeSidebarThreads(useShellStore.getState().threads, matched));
+                if (cwd && matched.length > 0) cacheThreadsForCwd(cwd, matched);
               })
               .catch(() => undefined);
           } else if (event.event.type === "message.completed") {
@@ -1158,22 +1187,40 @@ function App() {
           // around host/session lifecycle without a user prompt and stuck the sidebar spinner.
           // Busy markers are only set by sendPrompt → setSessionRunning(true).
         } else if (event.type === "extensionUi.request") {
-          if (event.runtimeId !== store.runtimeId) return;
-          // Only show waiting if this session is already in a user-initiated turn.
-          const key = sessionKeyFromSnapshot(store.snapshot);
-          if (key && store.runningSessions[key]) {
-            store.setSessionMarker(key, "waiting", {
+          // Drop only when a different runtime is active. Allow through when
+          // runtimeId is not yet set (session_start can race host.ready).
+          if (store.runtimeId && event.runtimeId !== store.runtimeId) return;
+
+          // Fire-and-forget portable methods (notify/status/widget/title/editor/working).
+          if (isExtensionUiFireForgetMethod(event.method)) {
+            const result = applyExtensionUiFireForget(extensionUiStateRef.current, {
               runtimeId: event.runtimeId,
-              reason: event.method,
+              method: event.method,
+              args: event.args,
+            });
+            extensionUiStateRef.current = result.state;
+            setExtensionUiState(result.state);
+            if (result.editorText !== undefined) {
+              store.setPrompt(result.editorText);
+            }
+            applyExtensionNotify(result.notify);
+          } else if (isExtensionUiDialogMethod(event.method)) {
+            // Only show waiting if this session is already in a user-initiated turn.
+            const key = sessionKeyFromSnapshot(store.snapshot);
+            if (key && store.runningSessions[key]) {
+              store.setSessionMarker(key, "waiting", {
+                runtimeId: event.runtimeId,
+                reason: event.method,
+              });
+            }
+            void respondToExtensionUi(event).finally(() => {
+              const st = useShellStore.getState();
+              const k = sessionKeyFromSnapshot(st.snapshot);
+              if (k && st.runningSessions[k]) {
+                st.setSessionMarker(k, "running", { runtimeId: event.runtimeId });
+              }
             });
           }
-          void respondToExtensionUi(event).finally(() => {
-            const st = useShellStore.getState();
-            const k = sessionKeyFromSnapshot(st.snapshot);
-            if (k && st.runningSessions[k]) {
-              st.setSessionMarker(k, "running", { runtimeId: event.runtimeId });
-            }
-          });
         }
         // Events ring is diagnostics / activity only — not the text authority.
         store.setEvents((current) => appendHostEvent(current, event));
@@ -1933,6 +1980,11 @@ function App() {
     resetAfterStop();
   }
 
+  function openProjects() {
+    setView("projects");
+    setSidebarOpen(false);
+  }
+
   async function openPackages() {
     setView("packages");
     setSidebarOpen(false);
@@ -2141,12 +2193,18 @@ function App() {
     acceptSnapshot(snap);
     setStatus("Agent Host ready");
     // Single list refresh after open — active flag comes from the live host once.
+    // Re-check host cwd: a concurrent openWorkspacePath (rapid project 新建会话)
+    // may have already switched the host; never write the *new* project's sessions
+    // under this path's bucket.
     const listed = await window.pix.session.list();
-    setThreads(mergeSidebarThreads(useShellStore.getState().threads, listed.threads));
-    setThreadsByCwd((prev) => ({
-      ...prev,
-      [normalizeCwdKey(cwd)]: mergeSidebarThreads(prev[normalizeCwdKey(cwd)] ?? [], listed.threads),
-    }));
+    const hostCwd = useShellStore.getState().snapshot?.cwd;
+    if (!hostCwd || normalizeCwdKey(hostCwd) !== normalizeCwdKey(cwd)) {
+      await refreshRecentWorkspaces();
+      return;
+    }
+    const matched = threadsForWorkspaceBucket(listed.threads, cwd);
+    setThreads(mergeSidebarThreads(useShellStore.getState().threads, matched));
+    cacheThreadsForCwd(cwd, matched);
     await refreshRecentWorkspaces();
   }
 
@@ -2376,7 +2434,9 @@ function App() {
       applySessionOpen(opened);
       requestContentReveal();
       restoreSessionContentMode(opened.snapshot.sessionFile);
+      // Pure conversation: protrusion must show「选择项目」, never a leftover project.
       selectWorkspacePath(undefined);
+      selectProjectPath(undefined);
       pendingPureConversationRef.current = false;
       setPendingPureConversation(false);
       setStatus("Agent Host ready");
@@ -2410,44 +2470,87 @@ function App() {
     }
   }
 
-  /** Open the selected project if needed, then create a new session under it. */
+  const newThreadForProjectGenRef = useRef(0);
+  const newThreadForProjectInFlightRef = useRef(false);
+  const newThreadForProjectPendingPathRef = useRef<string | null>(null);
+
+  /**
+   * Open the selected project if needed, then create a new session under it.
+   * Serialized + latest-wins: concurrent openWorkspacePath used to race host
+   * listSessions into the wrong cwd bucket and hide 对话 rows.
+   */
   async function newThreadForProject(path: string) {
-    // Do not abort a generating session — main parks the busy host.
+    newThreadForProjectGenRef.current += 1;
+    newThreadForProjectPendingPathRef.current = path;
+    // Coalesce bursts: one in-flight op; later clicks only bump gen + pending path.
+    if (newThreadForProjectInFlightRef.current) return;
+
+    newThreadForProjectInFlightRef.current = true;
     try {
-      if (useShellStore.getState().contentMode === "terminal") {
-        beginSurfaceTransition();
-        setContentMode("chat", { persist: false });
-        await window.pix.terminal.suspend().catch(() => undefined);
+      while (true) {
+        const runGen = newThreadForProjectGenRef.current;
+        const target = newThreadForProjectPendingPathRef.current;
+        if (!target) break;
+        newThreadForProjectPendingPathRef.current = null;
+
+        try {
+          // Do not abort a generating session — main parks the busy host.
+          if (useShellStore.getState().contentMode === "terminal") {
+            beginSurfaceTransition();
+            setContentMode("chat", { persist: false });
+            await window.pix.terminal.suspend().catch(() => undefined);
+          }
+          if (runGen !== newThreadForProjectGenRef.current) continue;
+
+          setView("thread");
+          setSidebarOpen(false);
+          setPrompt("");
+          setReviewOpen(false);
+          setEvents([]);
+          setSentPrompts([]);
+          setLastFailure(undefined);
+          setAttachments([]);
+          useShellStore.getState().setHistory([]);
+          useShellStore.getState().clearLiveStream();
+          selectWorkspacePath(target);
+
+          const current = useShellStore.getState().snapshot?.cwd;
+          if (!current || normalizeCwdKey(current) !== normalizeCwdKey(target)) {
+            await openWorkspacePath(target, { resumeRecent: false });
+          } else {
+            await ensureHost();
+          }
+          if (runGen !== newThreadForProjectGenRef.current) continue;
+
+          setStatus("Creating thread...");
+          const opened = await window.pix.session.create();
+          if (runGen !== newThreadForProjectGenRef.current) continue;
+
+          markSessionOpenForBottomScroll();
+          applySessionOpen(opened);
+          requestContentReveal();
+          restoreSessionContentMode(opened.snapshot.sessionFile);
+          setStatus("Agent Host ready");
+          await refreshThreads();
+          // Keep 对话 rail warm while hopping between project hosts.
+          await refreshConversationSessions();
+        } catch (error) {
+          if (runGen !== newThreadForProjectGenRef.current) continue;
+          reportAppError(error, "无法在项目下新建会话");
+          setTimelineReady(true);
+          pendingScrollBottomRef.current = false;
+        }
+
+        // Another click arrived while we worked — run once more for the latest path.
+        if (runGen !== newThreadForProjectGenRef.current) continue;
+        break;
       }
-      setView("thread");
-      setSidebarOpen(false);
-      setPrompt("");
-      setReviewOpen(false);
-      setEvents([]);
-      setSentPrompts([]);
-      setLastFailure(undefined);
-      setAttachments([]);
-      useShellStore.getState().setHistory([]);
-      useShellStore.getState().clearLiveStream();
-      selectWorkspacePath(path);
-      const current = useShellStore.getState().snapshot?.cwd;
-      if (!current || normalizeCwdKey(current) !== normalizeCwdKey(path)) {
-        await openWorkspacePath(path, { resumeRecent: false });
-      } else {
-        await ensureHost();
+    } finally {
+      newThreadForProjectInFlightRef.current = false;
+      // Path queued after we cleared inFlight but before exit — pick it up.
+      if (newThreadForProjectPendingPathRef.current) {
+        void newThreadForProject(newThreadForProjectPendingPathRef.current);
       }
-      setStatus("Creating thread...");
-      const opened = await window.pix.session.create();
-      markSessionOpenForBottomScroll();
-      applySessionOpen(opened);
-      requestContentReveal();
-      restoreSessionContentMode(opened.snapshot.sessionFile);
-      setStatus("Agent Host ready");
-      await refreshThreads();
-    } catch (error) {
-      reportAppError(error, "无法在项目下新建会话");
-      setTimelineReady(true);
-      pendingScrollBottomRef.current = false;
     }
   }
 
@@ -2985,6 +3088,7 @@ function App() {
   }, [snapshot, colorMode]);
 
   const railWidth = sidebarRailWidth(sidebarCollapsed, sidebarWidthPx);
+  const mcpNavBadge = mcpStatusFromExtensionUi(extensionUiState);
 
   return (
     <div
@@ -3043,6 +3147,7 @@ function App() {
             : (snapshot?.configuredPackages.global ?? 0) +
               (snapshot?.configuredPackages.project ?? 0)
         }
+        {...(mcpNavBadge ? { mcpBadge: mcpNavBadge.badge, mcpDetail: mcpNavBadge.detail } : {})}
         resourceCount={
           resources.length > 0
             ? resources.length
@@ -3061,6 +3166,7 @@ function App() {
         onResizeWidth={(px) => setSidebarWidthPx(px)}
         onNewThread={() => void newBlankTask()}
         onSelectProject={(path) => selectProjectPath(path)}
+        onOpenProjects={() => openProjects()}
         onOpenPackages={() => void openPackages()}
         onOpenResources={() => void openResources()}
         onOpenSettings={() => void openSettings()}
@@ -3115,6 +3221,7 @@ function App() {
                 collapsed={sidebarCollapsed}
                 contentModeSwitchLocked={running}
                 onToggleContentMode={() => void toggleContentModeSurface()}
+                extensionUi={extensionUiState}
               />
             ) : null}
 
@@ -3148,7 +3255,8 @@ function App() {
                       sessionFile={snapshot.sessionFile}
                       cwd={(snapshot.cwd?.trim() || workspacePath || "").trim()}
                       colorMode={activeSkinMode}
-                      className="min-h-0 flex-1 p-2"
+                      // Equal content insets + floating right-edge scrollbar (see PiTuiTerminal).
+                      className="min-h-0 flex-1"
                       onReady={(info) => {
                         endSurfaceTransition(info.sessionFile);
                       }}
@@ -3257,6 +3365,13 @@ function App() {
                               aria-hidden
                             />
                           ) : null}
+                          <div className="pointer-events-auto w-full">
+                            <ExtensionUiChrome
+                              locale={locale}
+                              state={extensionUiState}
+                              region="aboveEditor"
+                            />
+                          </div>
                           <Composer
                             locale={locale}
                             prompt={prompt}
@@ -3327,6 +3442,13 @@ function App() {
                             queuedMessages={queuedMessages}
                             onClearQueue={() => void clearQueuedMessages()}
                           />
+                          <div className="pointer-events-auto w-full">
+                            <ExtensionUiChrome
+                              locale={locale}
+                              state={extensionUiState}
+                              region="belowEditor"
+                            />
+                          </div>
                         </div>
                       </>
                     }
@@ -3347,6 +3469,27 @@ function App() {
               />
             </div>
           </section>
+        ) : view === "projects" ? (
+          <ProjectsPage
+            locale={locale}
+            workspacePath={workspacePath}
+            recentWorkspaces={recentWorkspaces}
+            threadsByCwd={threadsByCwd}
+            onOpenProject={(path) => {
+              void openWorkspacePath(path, { resumeRecent: true });
+              setView("thread");
+            }}
+            onCreateProject={() => void openWorkspacePicker()}
+            onNewSession={(path) => {
+              void newThreadForProject(path);
+              setView("thread");
+            }}
+            onOpenSession={(sessionPath, projectCwd) => {
+              void switchThread(sessionPath, projectCwd);
+              setView("thread");
+            }}
+            onRemoveProject={(path) => void removeRecentWorkspace(path)}
+          />
         ) : view === "packages" ? (
           <PackagesPage
             locale={locale}
@@ -3616,6 +3759,8 @@ function App() {
         confirmLabel={t(locale, "error.dialogOk")}
         onClose={clearAppError}
       />
+
+      <ExtensionUiHost locale={locale} />
     </div>
   );
 }

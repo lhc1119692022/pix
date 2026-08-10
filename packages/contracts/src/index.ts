@@ -305,7 +305,15 @@ export type RuntimeEvent =
   | { type: "message.delta"; delta: string }
   | { type: "thinking.delta"; delta: string }
   | { type: "message.completed"; reason: "stop" | "length" | "toolUse" }
-  | { type: "message.failed"; reason: "aborted" | "error"; message: string }
+  /**
+   * Non-success assistant stop reasons from pi (`StopReason` minus completed ones).
+   * Preserve the upstream reason — do not collapse pending/deferred into "error".
+   */
+  | {
+      type: "message.failed";
+      reason: "aborted" | "error" | "pending" | "deferred";
+      message: string;
+    }
   | { type: "tool.started"; toolCallId: string; toolName: string; args: unknown }
   | {
       type: "tool.completed";
@@ -1460,6 +1468,9 @@ export type ThemeSkinVariant = {
   tokens?: Record<string, string>;
 };
 
+/** How the wallpaper image is fitted into the shell canvas. */
+export type ThemeWallpaperFit = "cover" | "contain" | "stretch";
+
 /** Wallpaper framing and the stronger task-page readability treatment. */
 export type ThemeSkinArt = Partial<{
   focusX: number;
@@ -1468,6 +1479,13 @@ export type ThemeSkinArt = Partial<{
   dim: number;
   safeArea: "left" | "center" | "right";
   taskIntensity: number;
+  /**
+   * Wallpaper fit:
+   * - cover: fill the canvas, crop overflow (default)
+   * - contain: show the full image, letterbox as needed
+   * - stretch: distort to fill width and height
+   */
+  wallpaperFit: ThemeWallpaperFit;
 }>;
 
 /** Glass/material controls shared by Pix chrome. */
@@ -2447,7 +2465,10 @@ function isRuntimeEvent(value: unknown): value is RuntimeEvent {
       return value.reason === "stop" || value.reason === "length" || value.reason === "toolUse";
     case "message.failed":
       return (
-        (value.reason === "aborted" || value.reason === "error") &&
+        (value.reason === "aborted" ||
+          value.reason === "error" ||
+          value.reason === "pending" ||
+          value.reason === "deferred") &&
         typeof value.message === "string"
       );
     case "tool.started":

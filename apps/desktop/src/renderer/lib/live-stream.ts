@@ -227,6 +227,15 @@ export function applyRuntimeEventToLiveStream(
     }
     case "message.failed": {
       const { id, seq } = nextId(state, "system");
+      const title =
+        event.reason === "aborted"
+          ? "Response stopped"
+          : event.reason === "pending"
+            ? "Response pending"
+            : event.reason === "deferred"
+              ? "Response deferred"
+              : "Response failed";
+      const tone = event.reason === "pending" || event.reason === "deferred" ? "info" : "error";
       return mark({
         ...state,
         seq,
@@ -236,8 +245,8 @@ export function applyRuntimeEventToLiveStream(
             id,
             kind: "system",
             text: event.message,
-            title: event.reason === "aborted" ? "Response stopped" : "Response failed",
-            tone: "error",
+            title,
+            tone,
             timestamp: nowIso(),
           },
         ],
@@ -350,6 +359,7 @@ export function applyRuntimeEventToLiveStream(
             text: event.content,
             tone: "info",
             timestamp: nowIso(),
+            extension: true,
           },
         ],
       });
@@ -361,6 +371,10 @@ export function applyRuntimeEventToLiveStream(
         text = event.data === undefined ? "" : JSON.stringify(event.data, null, 2);
       } catch {
         text = "[unserializable value]";
+      }
+      // Prefer fenced JSON so the shared Markdown renderer formats entry payloads.
+      if (text && !text.startsWith("```")) {
+        text = `\`\`\`json\n${text}\n\`\`\``;
       }
       return mark({
         ...state,
@@ -374,6 +388,7 @@ export function applyRuntimeEventToLiveStream(
             text,
             tone: "info",
             timestamp: nowIso(),
+            extension: true,
           },
         ],
       });

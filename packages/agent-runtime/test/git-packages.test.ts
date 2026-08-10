@@ -249,7 +249,8 @@ process.exit(result.status ?? 1);
     await expect(manager.installAndPersist(source)).rejects.toThrow();
     expect(settings.getPackages()).toEqual([]);
     expect(progress.filter((event) => event.source === source).at(-1)?.type).toBe("error");
-    // pi 0.83 removes partial clones so a retry starts from a clean checkout.
+    // pi 0.83+ removes partial git clones on dependency-install failure so retries
+    // are not blocked by a half-written directory (previously retained the clone).
     expect(manager.getInstalledPath(source, "user")).toBeUndefined();
 
     await manager.installAndPersist(source);

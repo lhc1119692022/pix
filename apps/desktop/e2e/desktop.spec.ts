@@ -40,7 +40,51 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
     await expect(timeline.locator('input[type="checkbox"]')).toHaveCount(2);
     await expect(timeline.locator('input[type="checkbox"]').first()).toBeChecked();
     await expect(timeline.locator("del")).toContainText("Removed text");
-    await expect(page.locator(".content-table-scroll")).toBeVisible();
+    const markdownTable = timeline.getByTestId("markdown-table").first();
+    await expect(markdownTable).toBeVisible();
+    expect(
+      await markdownTable.locator(".content-table-scroll").evaluate((element) => ({
+        overflowX: getComputedStyle(element).overflowX,
+        tableLayout: getComputedStyle(element.querySelector("table")!).tableLayout,
+      })),
+    ).toEqual({ overflowX: "hidden", tableLayout: "fixed" });
+    const tableCopyButton = markdownTable.getByTestId("markdown-table-copy");
+    await tableCopyButton.click();
+    await expect(tableCopyButton).toHaveAccessibleName(/Table copied|已复制表格/i);
+    expect(
+      await page.evaluate(() => (window as Window & { __copiedCode?: string }).__copiedCode),
+    ).toBe("Type\tStatus\nMarkdown\tReady");
+    // Expand control lives in the hover-only aside; hover the wrap first.
+    await markdownTable.hover();
+    await markdownTable.getByTestId("markdown-table-expand").click();
+    const expandedTable = page.getByTestId("markdown-table-expanded");
+    await expect(expandedTable).toBeVisible();
+    const tableClose = page.getByTestId("content-preview-close");
+    await expect(tableClose).toBeVisible();
+    await expect(tableClose).toHaveAccessibleName(/Close table|关闭表格/i);
+    // Empty button: every point in the 40×40 hit box must close (including X diagonals).
+    const closeHits = [
+      { x: 0.5, y: 0.5, label: "center" },
+      { x: 0.32, y: 0.32, label: "diag-tl" },
+      { x: 0.68, y: 0.68, label: "diag-br" },
+      { x: 0.32, y: 0.68, label: "diag-bl" },
+      { x: 0.68, y: 0.32, label: "diag-tr" },
+      { x: 0.12, y: 0.5, label: "mid-left" },
+      { x: 0.88, y: 0.5, label: "mid-right" },
+    ] as const;
+    for (const hit of closeHits) {
+      if ((await expandedTable.count()) === 0) {
+        await markdownTable.hover();
+        await markdownTable.getByTestId("markdown-table-expand").click();
+        await expect(expandedTable).toBeVisible();
+      }
+      const box = await tableClose.boundingBox();
+      expect(box, `close button box missing for ${hit.label}`).toBeTruthy();
+      await page.mouse.click(box!.x + box!.width * hit.x, box!.y + box!.height * hit.y);
+      await expect(expandedTable, `close hit ${hit.label} should dismiss table`).toBeHidden({
+        timeout: 5_000,
+      });
+    }
     await expect(page.locator(".katex").first()).toBeVisible();
     await expect(page.locator(".katex-display")).toBeVisible();
 
@@ -100,7 +144,7 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
         page.getByTestId("composer-attachment-card").filter({ hasText: "photo.png" }),
       ).toBeVisible();
       await image.click({ force: true });
-      await expect(page.locator('.content-image-preview-dialog[role="dialog"]')).toBeVisible();
+      await expect(page.getByTestId("image-preview-dialog")).toBeVisible();
       await page.keyboard.press("Escape");
     }
     const video = timeline.locator("video.content-video");
@@ -278,7 +322,11 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
     );
 
     const imageCard = cards.filter({ hasText: "photo.png" });
-    await imageCard.getByRole("button").click();
+    await imageCard.getByTestId("attachment-image-preview").click();
+    await expect(page.getByTestId("image-preview-dialog")).toBeVisible();
+    await page.getByRole("button", { name: /Close image preview|关闭图片预览/i }).click();
+    await expect(page.getByTestId("image-preview-dialog")).toBeHidden();
+    await imageCard.getByRole("button", { name: /Remove attachment|移除附件/i }).click();
     await expect(cards).toHaveCount(10);
     await page.getByTestId("composer-attach").click();
     await page.getByTestId("composer-attach-files").click();
@@ -299,6 +347,12 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
       await expect
         .poll(async () => sentCards.count(), { timeout: 15_000 })
         .toBeGreaterThanOrEqual(1);
+      const sentImagePreview = sentGroup.getByTestId("attachment-image-preview");
+      await expect(sentImagePreview).toBeVisible({ timeout: 15_000 });
+      await sentImagePreview.click();
+      await expect(page.getByTestId("image-preview-dialog")).toBeVisible();
+      await page.keyboard.press("Escape");
+      await expect(page.getByTestId("image-preview-dialog")).toBeHidden();
     }
     const request = JSON.stringify(pix.fakeModel.requests.at(-1) ?? {});
     // Prefer path segments — Windows path separators and prompt wrapping may vary.
@@ -308,37 +362,35 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
     }
   });
 
-  test("top New session targets the selected project", async ({ page }) => {
+  test("top and conversations New session start pure conversation with project pick", async ({
+    page,
+  }) => {
     await startHost(page);
 
-    // Use the checked-out desktop package as a durable project; e2e temp paths are
-    // intentionally classified as conversations and cannot appear in the project rail.
+    // Top「新建会话」is always pure conversation (not bound to selected project).
+    await expect(page.getByTestId("start-host")).toHaveAttribute("data-target", "conversation");
+    await page.getByTestId("start-host").click({ force: true });
+    await expect(page.getByTestId("composer-project-picker")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("workspace-name-chip")).toContainText(/Select project|选择项目/i);
+
+    // 对话 section「新建会话」same pure-conversation protrusion.
+    await page.getByTestId("threads-new-btn").evaluate((el: HTMLButtonElement) => el.click());
+    await expect(page.getByTestId("composer-project-picker")).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByTestId("workspace-name-chip")).toContainText(/Select project|选择项目/i);
+
+    // Project-bound new session remains on each project row action.
     const projectPath = resolve(import.meta.dirname, "..");
     await page.evaluate(async (path) => {
       await window.pix.workspace.openPath(path, { resumeRecent: false });
     }, projectPath);
-    await expect(page.getByTestId("start-host")).toHaveAttribute("data-target", "project", {
-      timeout: 30_000,
-    });
-
-    // The section-level action always starts a conversation and clears project selection.
-    await page.getByTestId("threads-new-btn").click({ force: true });
-    await expect(page.getByTestId("start-host")).toHaveAttribute("data-target", "conversation", {
-      timeout: 30_000,
-    });
-
-    const project = page.locator(
-      `[data-testid="recent-workspace-item"][data-path="${projectPath}"]`,
-    );
-    await project.click();
-    await expect(project).toHaveAttribute("aria-pressed", "true");
-    await expect(page.getByTestId("start-host")).toHaveAttribute("data-target", "project");
-
-    await page.getByTestId("start-host").click();
+    const trustDialog = page.getByTestId("project-trust-dialog");
+    if (await trustDialog.isVisible().catch(() => false)) {
+      await page.getByTestId("project-trust-dialog-later").click();
+      await expect(trustDialog).toBeHidden({ timeout: 10_000 });
+    }
     await expect(page.getByTestId("runtime-snapshot").first()).toContainText(projectPath, {
       timeout: 45_000,
     });
-    await expect(page.getByTestId("start-host")).toHaveAttribute("data-target", "project");
   });
 
   test("sessions: create a second conversation and switch back", async ({ page }) => {
@@ -366,8 +418,7 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
     // Conversations list holds pure sessions (PIX_WORKSPACE is ephemeral → not a project).
     await expect(conversationSessionButtons(page)).toHaveCount(2, { timeout: 15_000 });
 
-    // Collapsing the rail and re-selecting the already-open conversation must not
-    // clear/recreate its timeline rows.
+    // Collapse + expand conversations, then re-select current — timeline must stay.
     const currentUserRow = page.getByTestId("timeline").locator('[data-kind="user"]').last();
     await currentUserRow.evaluate((element) => {
       element.setAttribute("data-no-refresh-marker", "true");
@@ -524,6 +575,32 @@ test.describe("Desktop shell Playwright E2E (macOS Electron)", () => {
       )
       .toBe("0px");
     await expect.poll(async () => (await sidebarMaterial()).backdrop).toContain("blur");
+
+    const wallpaperGeometry = () =>
+      page.getByTestId("skin-wallpaper").evaluate((element) => {
+        const rect = element.getBoundingClientRect();
+        const style = getComputedStyle(element);
+        return {
+          left: rect.left,
+          width: rect.width,
+          viewportWidth: window.innerWidth,
+          backgroundSize: getComputedStyle(element, "::before").backgroundSize,
+          clipPath: style.clipPath,
+        };
+      });
+    const opaqueSidebarWallpaper = await wallpaperGeometry();
+    await translucentToggle.click();
+    await expect(page.getByTestId("sidebar")).toHaveAttribute("data-sidebar-translucent", "true");
+    await expect.poll(wallpaperGeometry).toMatchObject({
+      left: 0,
+      width: opaqueSidebarWallpaper.viewportWidth,
+      viewportWidth: opaqueSidebarWallpaper.viewportWidth,
+      backgroundSize: opaqueSidebarWallpaper.backgroundSize,
+    });
+    await expect.poll(async () => (await wallpaperGeometry()).clipPath).toContain("inset");
+    await translucentToggle.click();
+    await expect(page.getByTestId("sidebar")).toHaveAttribute("data-sidebar-translucent", "false");
+
     await expect(page.getByTestId("appearance-theme-skin-edit")).toBeVisible();
     await expect(page.getByTestId("appearance-theme-skin-delete")).toHaveCount(0);
 

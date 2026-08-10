@@ -147,9 +147,10 @@
   --text: var(--foreground);
   --text-muted: var(--muted-foreground);
   --text-subtle: var(--muted-foreground);
-  --bg-composer: var(--surface-panel);
-  --composer-border: color-mix(in srgb, #ffffff 11%, var(--surface-panel));
-  --composer-protrusion: #212121;
+  /* Composer input card + project protrusion (dark). */
+  --bg-composer: #2b2b2b;
+  --composer-border: color-mix(in srgb, #ffffff 11%, #2b2b2b);
+  --composer-protrusion: #1f1f1f;
   --success: #3ecf8e;
   --warning: #f0a500;
   --danger: #e05555;
@@ -185,14 +186,18 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  /* Unified group / section label type (sidebar, settings, menus, palette). */
-  --group-label-size: 12px;
-  --group-label-weight: 500;
-  --group-label-line-height: 1.35;
-  --group-label-color: var(--text-subtle);
   /* Appearance prefs (overridden by applyAppearancePrefs). */
   --ui-font-size: 14px;
   --code-font-size: 12px;
+  /*
+   * Unified group / section label type (sidebar, settings, menus, palette).
+   * Same size as body/UI text — hierarchy uses color/weight, not a smaller type.
+   */
+  --group-label-size: var(--ui-font-size, 14px);
+  --group-label-weight: 500;
+  --group-label-line-height: 1.35;
+  /* Dark theme group names */
+  --group-label-color: #747474;
 }
 
 [data-theme="light"] {
@@ -247,7 +252,8 @@
   --text: var(--foreground);
   --text-muted: var(--muted-foreground);
   --text-subtle: var(--muted-foreground);
-  --bg-composer: var(--surface-panel);
+  /* Composer input card + project protrusion (light). */
+  --bg-composer: #ffffff;
   --composer-border: color-mix(in srgb, #9aa0ab 36%, #ffffff);
   --composer-protrusion: #f5f5f5;
   --bg-app: var(--canvas);
@@ -268,11 +274,15 @@
   --font-weight-regular: 400;
   --font-weight-medium: 500;
   --font-weight-semibold: 600;
-  /* Unified group / section label type (sidebar, settings, menus, palette). */
-  --group-label-size: 12px;
+  /*
+   * Unified group / section label type (sidebar, settings, menus, palette).
+   * Same size as body/UI text — hierarchy uses color/weight, not a smaller type.
+   */
+  --group-label-size: var(--ui-font-size, 14px);
   --group-label-weight: 500;
   --group-label-line-height: 1.35;
-  --group-label-color: var(--text-subtle);
+  /* Light theme group names */
+  --group-label-color: #a7a9a9;
 }
 
 html,
@@ -285,7 +295,7 @@ body,
 
 /*
  * Single type scale for all “group name” labels across the app.
- * Use this class or the listed selectors — do not invent ad-hoc 11px/12px group titles.
+ * Size matches regular UI text (--ui-font-size); do not invent smaller group titles.
  */
 .group-label,
 .settings-section-label,
@@ -458,9 +468,12 @@ body {
 html[data-theme-skin-active="true"] .skin-wallpaper {
   display: block;
 }
-/* Native translucent: leave the rail clear so Electron vibrancy can show. */
+/*
+ * Native translucent: clip the rail without narrowing the wallpaper canvas.
+ * Keeping viewport-sized geometry prevents percentage-based skin art from rescaling.
+ */
 html[data-theme-skin-active="true"][data-theme-skin-sidebar-translucent="true"] .skin-wallpaper {
-  left: var(--sidebar-current-width, 0px);
+  clip-path: inset(0 0 0 var(--sidebar-current-width, 0px));
 }
 html[data-theme-skin-active="true"] .app-shell {
   z-index: 1;
@@ -844,9 +857,10 @@ html[data-custom-window-controls="true"] .page-header {
 }
 
 .nav-item {
-  @apply flex h-8 w-full items-center gap-2.5 px-2.5 text-left text-[13px] font-normal;
+  @apply flex h-8 w-full items-center gap-2.5 px-2.5 text-left font-normal;
   border-radius: var(--radius-control);
   color: var(--sidebar-foreground);
+  font-size: var(--ui-font-size, 14px);
 }
 
 .nav-item:hover {
@@ -861,9 +875,10 @@ html[data-custom-window-controls="true"] .page-header {
 
 /* Unified rail list row — compact h-8, same fill for hover + active selection. */
 .sidebar-list-row {
-  @apply relative flex h-8 w-full min-w-0 items-center px-2.5 text-[13px] font-normal transition-colors;
+  @apply relative flex h-8 w-full min-w-0 items-center px-2.5 font-normal transition-colors;
   border-radius: var(--radius-control);
   color: var(--sidebar-foreground);
+  font-size: var(--ui-font-size, 14px);
 }
 
 .sidebar-list-row:hover,
@@ -873,7 +888,8 @@ html[data-custom-window-controls="true"] .page-header {
 }
 
 .sidebar-section-head {
-  @apply flex h-8 w-full min-w-0 items-center gap-1 px-2.5 transition-colors;
+  /* relative: section action buttons pin to the same right edge as list RowActions */
+  @apply relative flex h-8 w-full min-w-0 items-center gap-1 px-2.5 transition-colors;
   border-radius: var(--radius-control);
 }
 
@@ -889,6 +905,51 @@ html[data-custom-window-controls="true"] .page-header {
   align-items: center;
   padding: 0 0.625rem;
   /* type from .group-label */
+}
+
+/* 项目 / 对话 section toggles — same type as group labels (not ad-hoc 13px). */
+.sidebar-section-toggle {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  /* Reserve trailing space so the title never sits under absolute actions
+   * (up to 3 × h-7 buttons + gaps — matches 项目/对话 action strips). */
+  padding-right: 5.75rem;
+}
+
+/*
+ * Section action strip — same anchor as list RowActions (`right-1` + vertical center)
+ * so 项目 / 对话 / list-mode buttons share one right edge.
+ */
+.sidebar-section-actions {
+  position: absolute;
+  top: 50%;
+  right: 0.25rem;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.125rem;
+  transform: translateY(-50%);
+}
+
+/*
+ * Expand/collapse chevron:
+ * - collapsed section → always visible (so users see they can expand)
+ * - expanded section → hover/focus only (same as section action buttons)
+ */
+.sidebar-section-chevron {
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.15s ease,
+    transform 0.15s ease;
+}
+.sidebar-section-head[data-expanded="false"] .sidebar-section-chevron,
+.sidebar-section-head:hover .sidebar-section-chevron,
+.sidebar-section-head:focus-within .sidebar-section-chevron {
+  opacity: 0.7;
+  pointer-events: auto;
 }
 
 .nav-item-primary {
@@ -1270,15 +1331,36 @@ html[data-custom-window-controls="true"] .page-header {
   min-width: 0;
   min-height: 2rem; /* a bit taller than the previous 0.375rem padding-only bar */
   align-items: center;
-  gap: 2rem;
+  gap: 1.25rem;
   border: none;
   border-radius: var(--radius-panel) var(--radius-panel) 0 0;
   background: var(--composer-protrusion, var(--hover-fill));
-  padding: 0.5rem 0.85rem;
+  padding: 0.375rem 0.65rem;
   font-size: 13px; /* same as body / group labels */
   font-weight: 400;
   color: var(--foreground);
   box-sizing: border-box;
+}
+/* Project / local / branch chips — hover works on both light & dark protrusion fills
+ * (surface-muted ≈ protrusion in light, so --hover-fill alone is nearly invisible). */
+.composer-protrusion-chip {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.375rem;
+  border-radius: var(--radius-control);
+  padding: 0.25rem 0.45rem;
+  color: var(--foreground);
+  transition: background 0.12s ease;
+}
+.composer-protrusion-chip:hover,
+.composer-protrusion-chip:focus-visible,
+.composer-protrusion-chip[aria-expanded="true"] {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  outline: none;
+}
+.composer-protrusion-chip:focus-visible {
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--foreground) 18%, transparent);
 }
 /* Input card: very light hairline. */
 .composer-card {
@@ -2225,9 +2307,17 @@ html[data-custom-window-controls="true"] .page-header {
 
 /*
  * Embedded pi TUI surface (issue #25) — ghostty-web (Ghostty VT / WASM) canvas host.
- * Background is also set inline from terminal prefs / color mode.
+ *
+ * Layout model (matches chat overlay scroll):
+ * - Host has equal L/R content padding (set inline from TERMINAL_CONTENT_INSET_PX).
+ * - FitAddon is patched to NOT reserve Ghostty's ~15px gA gutter (that gutter would
+ *   skew one side only). Canvas is cell-grid sized; residual cell width is centered
+ *   with margin:auto so left/right content margins stay equal.
+ * - Ghostty's in-canvas scrollbar is suppressed; `.pi-tui-scroll-thumb` floats on the
+ *   app right edge with zero layout width and never eats content margins.
  */
 .pi-tui-terminal {
+  position: relative;
   background: #191919;
 }
 .pi-tui-terminal-host {
@@ -2236,17 +2326,65 @@ html[data-custom-window-controls="true"] .page-header {
   height: 100%;
   min-height: 0;
   min-width: 0;
-  padding: 4px 6px;
   overflow: hidden;
+  box-sizing: border-box;
   /* Keep outline off when the IME helper textarea steals focus. */
   outline: none;
 }
 /*
- * Let ghostty-web set exact cell-grid pixel sizes on the canvas.
- * Stretching to 100% misaligns mouse hit-testing vs painted cells.
+ * Exact cell-grid pixel sizes from ghostty-web (do not stretch to 100% —
+ * that breaks mouse hit-testing). margin:auto splits residual width equally
+ * inside the padded content box.
  */
 .pi-tui-terminal-host canvas {
   display: block;
+  margin-right: auto;
+  margin-left: auto;
+}
+/* Floating terminal scrollbar — same chrome as .pix-scroll-thumb, pane-right edge. */
+.pi-tui-scroll-thumb {
+  position: fixed;
+  z-index: 10050;
+  width: 12px;
+  box-sizing: border-box;
+  border: none;
+  outline: none;
+  background: transparent;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.16s ease;
+  will-change: top, opacity;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+}
+.pi-tui-scroll-thumb::before {
+  content: "";
+  position: absolute;
+  inset-block: 2px;
+  right: 2px;
+  width: 6px;
+  border: none;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--muted-foreground, #a0a0a0) 48%, transparent);
+  transition:
+    width 0.12s ease,
+    background-color 0.12s ease;
+}
+.pi-tui-scroll-thumb[data-visible="true"] {
+  opacity: 1;
+  pointer-events: auto;
+}
+.pi-tui-scroll-thumb[data-hovered="true"]::before,
+.pi-tui-scroll-thumb[data-dragging="true"]::before {
+  width: 8px;
+  background: color-mix(in srgb, var(--muted-foreground, #a0a0a0) 78%, transparent);
+}
+.pi-tui-scroll-thumb[data-dragging="true"] {
+  cursor: grabbing;
 }
 .timeline-assistant-row {
   width: 100%;
@@ -2746,50 +2884,75 @@ html[data-custom-window-controls="true"] .page-header {
   border-radius: 12px;
   background: #050607;
 }
-.content-image-preview {
-  position: fixed;
-  inset: 0;
-  z-index: 20000;
+.content-image-preview-surface {
   display: grid;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
   place-items: center;
-  background: color-mix(in srgb, #050607 88%, transparent);
-  padding: 48px;
-  backdrop-filter: blur(16px);
 }
-.content-image-preview > img {
+.content-image-preview-image {
+  display: block;
   max-width: 100%;
   max-height: 100%;
-  border-radius: 10px;
+  border-radius: 12px;
   object-fit: contain;
   box-shadow: 0 24px 80px rgb(0 0 0 / 42%);
 }
-.content-image-preview-close {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  display: inline-flex;
-  width: 34px;
-  height: 34px;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid rgb(255 255 255 / 16%);
-  border-radius: 999px;
-  background: rgb(255 255 255 / 9%);
-  color: #fff;
-}
 
-.content-table-scroll {
+/*
+ * Compact GFM table: shell + action rail outside the border.
+ * Actions sit to the right of the header (vertical), hover/focus only.
+ */
+.content-table-wrap {
+  display: flex;
   max-width: 100%;
-  overflow-x: auto;
+  align-items: flex-start;
+  gap: 4px;
   margin: 0.65rem 0;
+}
+.content-table-shell {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
   border: 1px solid var(--border);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-panel, var(--background)) 92%, transparent);
-  -webkit-overflow-scrolling: touch;
+}
+/* Outside the table chrome, top-aligned with thead — vertical stack. */
+.content-table-aside {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: center;
+  /* Align with thead vertical center-ish (first header cell padding). */
+  padding-top: 0.35rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.12s ease;
+}
+.content-table-wrap:hover > .content-table-aside,
+.content-table-wrap:focus-within > .content-table-aside {
+  opacity: 1;
+  pointer-events: auto;
+}
+.content-table-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  color: var(--text-subtle);
+}
+.content-table-scroll {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 .pix-md .content-table-scroll table {
-  width: max-content;
-  min-width: 100%;
+  width: 100%;
+  min-width: 0;
+  table-layout: fixed;
   margin: 0;
   border-collapse: separate;
   border-spacing: 0;
@@ -2804,13 +2967,14 @@ html[data-custom-window-controls="true"] .page-header {
 }
 .pix-md .content-table-scroll th,
 .pix-md .content-table-scroll td {
+  min-width: 0;
   border-width: 0 1px 1px 0;
   border-style: solid;
   border-color: color-mix(in srgb, var(--border) 88%, transparent);
   padding: 0.55rem 0.75rem;
   vertical-align: top;
-  /* Prefer readable wrap for CJK / prose; keep wide code cells scrollable via the shell. */
   white-space: normal;
+  overflow-wrap: anywhere;
   word-break: break-word;
 }
 .pix-md .content-table-scroll th:last-child,
@@ -2825,7 +2989,143 @@ html[data-custom-window-controls="true"] .page-header {
   background: color-mix(in srgb, var(--hover-fill, var(--muted)) 55%, transparent);
 }
 .pix-md .content-table-scroll code {
-  white-space: nowrap;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.content-preview-dialog {
+  inset: 0;
+  display: flex;
+  width: 100vw;
+  height: 100dvh;
+  max-width: none;
+  align-items: center;
+  justify-content: center;
+  /* No transform — keeps position:fixed close button viewport-relative. */
+  transform: none;
+  border: 0;
+  border-radius: 0;
+  background: rgb(0 0 0 / 42%);
+  /* Top padding clears the fixed close pill (40px + margins). */
+  padding: clamp(56px, 8vh, 96px) clamp(20px, 8vw, 180px);
+  box-shadow: none;
+  backdrop-filter: blur(5px);
+  /* DialogContent base uses grid; force single centered stage. */
+  gap: 0;
+}
+/* Centers the preview card; does not host the close control. */
+.content-preview-dialog-stage {
+  position: relative;
+  display: flex;
+  max-width: 100%;
+  max-height: 100%;
+  min-width: 0;
+  min-height: 0;
+  align-items: center;
+  justify-content: center;
+}
+/*
+ * Lightbox close — fixed to the viewport top-right (not the table card).
+ * Empty <button>: full border-box is one hit target; X via ::after only.
+ */
+.content-preview-dialog-close {
+  position: fixed;
+  top: max(14px, env(safe-area-inset-top, 0px));
+  right: max(14px, env(safe-area-inset-right, 0px));
+  z-index: 30;
+  box-sizing: border-box;
+  width: 40px;
+  height: 40px;
+  min-width: 40px;
+  min-height: 40px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  padding: 0;
+  background: color-mix(in srgb, var(--surface-panel, #2d2d2d) 94%, #000 6%);
+  color: var(--foreground);
+  box-shadow: 0 4px 18px rgb(0 0 0 / 0.32);
+  cursor: pointer;
+  pointer-events: auto !important;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Critical in Electron: top chrome is often a window-drag region. */
+  -webkit-app-region: no-drag !important;
+  app-region: no-drag !important;
+  transition: background 0.12s ease;
+}
+/* Decorative X only — must never be a hit target. */
+.content-preview-dialog-close::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 14px;
+  height: 14px;
+  transform: translate(-50%, -50%);
+  pointer-events: none !important;
+  background:
+    linear-gradient(
+      45deg,
+      transparent calc(50% - 1px),
+      currentColor calc(50% - 1px),
+      currentColor calc(50% + 1px),
+      transparent calc(50% + 1px)
+    ),
+    linear-gradient(
+      -45deg,
+      transparent calc(50% - 1px),
+      currentColor calc(50% - 1px),
+      currentColor calc(50% + 1px),
+      transparent calc(50% + 1px)
+    );
+}
+.content-preview-dialog-close:hover {
+  background: color-mix(in srgb, var(--hover-fill, #383838) 100%, transparent);
+}
+.content-preview-dialog-close:active {
+  background: color-mix(in srgb, var(--hover-fill, #383838) 100%, #000 8%);
+}
+.content-preview-dialog-close:focus-visible {
+  outline: 2px solid var(--ring, #379cfc);
+  outline-offset: 2px;
+}
+.content-table-expanded {
+  display: flex;
+  width: min(100%, 1600px);
+  max-height: min(82dvh, 1040px);
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--surface-panel, var(--background));
+  box-shadow: 0 28px 90px rgb(0 0 0 / 38%);
+}
+.content-table-expanded-scroll {
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+.pix-md .content-table-expanded-scroll table {
+  table-layout: auto;
+}
+@media (max-width: 720px) {
+  .content-preview-dialog {
+    padding: 56px 10px 14px;
+  }
+  .content-preview-dialog-close {
+    top: max(10px, env(safe-area-inset-top, 0px));
+    right: max(10px, env(safe-area-inset-right, 0px));
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .content-table-expanded {
+    max-height: calc(100dvh - 70px);
+    border-radius: 12px;
+  }
 }
 .pix-md .contains-task-list {
   padding-left: 0;
@@ -2975,12 +3275,6 @@ html[data-custom-window-controls="true"] .page-header {
     outline-color 0.8s ease;
 }
 
-@media (max-width: 620px) {
-  .content-image-preview {
-    padding: 54px 14px 18px;
-  }
-}
-
 .recent-workspaces {
   @apply flex max-h-36 flex-col gap-px overflow-auto;
 }
@@ -2992,6 +3286,223 @@ html[data-custom-window-controls="true"] .page-header {
   background-attachment: fixed;
   background-size: cover;
   color: var(--foreground);
+}
+
+/* ── Projects manager (list-layout nav → 项目) ── */
+.projects-page-header {
+  border-bottom: none;
+  padding-top: 1.25rem;
+  padding-bottom: 0.25rem;
+}
+.projects-page-header h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+.projects-page-create {
+  display: inline-flex;
+  height: 2rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: var(--surface-panel, var(--card));
+  padding: 0 0.9rem;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--foreground);
+  transition: background 0.12s ease;
+}
+.projects-page-create:hover {
+  background: var(--hover-fill);
+}
+.projects-page-body {
+  overflow: auto;
+}
+.projects-page-inner {
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 0.5rem 1.5rem 2.5rem;
+}
+.projects-page-search {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  height: 2.5rem;
+  margin: 1.25rem 0 1.5rem;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+  padding: 0 0.9rem;
+  color: var(--muted-foreground);
+}
+.projects-page-search-input {
+  min-width: 0;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  font-size: 13px;
+  color: var(--foreground);
+  outline: none;
+}
+.projects-page-search-input::placeholder {
+  color: var(--text-subtle);
+}
+.projects-page-table {
+  display: flex;
+  flex-direction: column;
+}
+.projects-page-table-head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem 6.5rem;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0 0.25rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-subtle);
+  font-size: 12px;
+}
+.projects-page-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.projects-page-sort:hover {
+  color: var(--muted-foreground);
+}
+.projects-page-col-updated {
+  justify-self: start;
+  text-align: left;
+}
+.projects-page-col-actions {
+  width: 100%;
+}
+.projects-page-card {
+  border-bottom: 1px solid var(--border);
+}
+.projects-page-card:last-child {
+  border-bottom: none;
+}
+.projects-page-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem 6.5rem;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 3rem;
+  margin: 0 -0.35rem;
+  padding: 0.2rem 0.35rem;
+  border-radius: var(--radius-control);
+  transition: background 0.12s ease;
+}
+/* Card hover / active highlight (was too weak / missing before). */
+.projects-page-row:hover,
+.projects-page-row.is-active,
+.projects-page-card.is-expanded > .projects-page-row {
+  background: var(--hover-fill);
+}
+.projects-page-row-main {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.55rem;
+  background: transparent;
+  border: 0;
+  padding: 0.45rem 0;
+  text-align: left;
+  color: var(--foreground);
+  cursor: pointer;
+}
+.projects-page-row-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.projects-page-row-updated {
+  justify-self: start;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+.projects-page-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.15rem;
+  /* Always visible — not hover-only. */
+  opacity: 1;
+}
+.projects-page-icon-btn {
+  display: inline-flex;
+  height: 1.75rem;
+  width: 1.75rem;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+}
+.projects-page-icon-btn:hover {
+  background: color-mix(in srgb, var(--foreground) 10%, transparent);
+  color: var(--foreground);
+}
+.projects-page-sessions {
+  display: flex;
+  flex-direction: column;
+  padding: 0.15rem 0 0.55rem;
+}
+.projects-page-session-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem 6.5rem;
+  gap: 0.75rem;
+  align-items: center;
+  min-height: 2.35rem;
+  margin: 0 -0.35rem;
+  padding: 0.2rem 0.35rem 0.2rem 2rem;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--foreground);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.projects-page-session-row:hover {
+  background: var(--hover-fill);
+}
+.projects-page-session-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  color: var(--muted-foreground);
+}
+.projects-page-session-row:hover .projects-page-session-name {
+  color: var(--foreground);
+}
+.projects-page-session-updated {
+  justify-self: start;
+  text-align: left;
+  font-size: 12px;
+  color: var(--text-subtle);
+  white-space: nowrap;
+}
+.projects-page-empty {
+  margin: 2rem 0;
+  text-align: center;
+  font-size: 13px;
+  color: var(--text-subtle);
 }
 .page-header {
   @apply flex shrink-0 items-center justify-between gap-3 border-b py-3 pl-5;
@@ -3870,13 +4381,13 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
 .settings-section-label {
   margin: 0;
   padding: 0 0.125rem;
-  /* type from .group-label */
+  /* type size/weight/color from unified group-label rule above */
 }
 /* Provider id labels only (anthropic / openai / …) — monospaced codes. */
 .settings-section-label-code {
+  margin: 0;
+  padding: 0 0.125rem;
   font-family: var(--font-mono);
-  /* type from .group-label */
-  text-transform: none;
 }
 .settings-section-hint {
   @apply m-0;
@@ -4134,6 +4645,7 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
 .theme-skin-dialog-preview-column {
   display: flex;
   min-width: 0;
+  min-height: 0;
   flex-direction: column;
   gap: 0.8rem;
   border-right: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
@@ -4148,7 +4660,26 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
 .theme-skin-dialog-asset-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
   gap: 0.5rem;
+}
+.theme-skin-dialog-asset-actions-left {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+/* Wallpaper fit — right side of the choose-wallpaper action row. */
+.theme-skin-dialog-asset-fit {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+.theme-skin-dialog-asset-fit-trigger {
+  min-width: 8.5rem;
+  height: 2rem;
+  font-size: 12px;
 }
 .theme-skin-dialog-footer {
   flex: 0 0 auto;
@@ -4165,16 +4696,21 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   font-size: 11px;
   text-align: left;
 }
+/*
+ * Studio interface preview — mini replica of live app-shell:
+ * full-bleed wallpaper canvas + absolute rail + padded shell-content.
+ */
 .theme-skin-studio-preview {
   position: relative;
-  min-height: 330px;
+  min-height: 360px;
   flex: 1 1 auto;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--preview-text) 18%, transparent);
-  border-radius: 1rem;
+  border-radius: 12px;
   isolation: isolate;
+  /* Match app window canvas (under translucent rail when wallpaper is clipped). */
+  background: var(--background, var(--preview-surface));
 }
-/* Frame chrome follows the previewed light/dark shell, not the dialog chrome. */
 .theme-skin-studio-preview[data-preview-mode="dark"] {
   box-shadow:
     0 18px 38px rgb(0 0 0 / 0.28),
@@ -4186,23 +4722,52 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
     0 14px 32px rgb(15 23 42 / 0.1),
     inset 0 1px rgb(255 255 255 / 0.7);
 }
-.theme-skin-studio-wallpaper,
-.theme-skin-studio-scrim {
+/*
+ * Live .skin-wallpaper: fixed full canvas, ::before image + ::after dim/gradient.
+ * Keep viewport-sized geometry so cover/contain/focus% match the real window.
+ */
+.theme-skin-studio-wallpaper {
   position: absolute;
   inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--skin-wallpaper-base, var(--background));
 }
-.theme-skin-studio-wallpaper {
+.theme-skin-studio-wallpaper::before,
+.theme-skin-studio-wallpaper::after {
+  content: "";
+  position: absolute;
+  inset: -2px;
+  pointer-events: none;
+}
+.theme-skin-studio-wallpaper::before {
+  background-image: var(--skin-wallpaper-image, none);
+  background-position: var(--skin-art-position, center);
   background-repeat: no-repeat;
+  background-size: var(--skin-art-size, cover);
   filter: saturate(1.06) contrast(1.015);
   transform: scale(1.01);
 }
-.theme-skin-studio-scrim {
-  background: rgb(var(--preview-background-rgb) / 0.08);
-  pointer-events: none;
+.theme-skin-studio-wallpaper::after {
+  background:
+    linear-gradient(
+      115deg,
+      rgb(
+        var(--skin-background-rgb, var(--preview-background-rgb)) /
+          calc(var(--skin-wallpaper-dim, 0) + 0.08)
+      ),
+      transparent 56%
+    ),
+    rgb(var(--skin-background-rgb, var(--preview-background-rgb)) / var(--skin-wallpaper-dim, 0));
 }
-/* Opaque skins need no dim scrim wash over their solid canvas. */
-.theme-skin-studio-preview[data-preview-glass="false"] .theme-skin-studio-scrim {
+.theme-skin-studio-preview[data-preview-has-wallpaper="false"] .theme-skin-studio-wallpaper::before,
+.theme-skin-studio-preview[data-preview-has-wallpaper="false"] .theme-skin-studio-wallpaper::after {
   display: none;
+}
+/* Native translucent rail: clip wallpaper off the rail (same idea as live clip-path). */
+.theme-skin-studio-preview[data-preview-sidebar-translucent="true"] .theme-skin-studio-wallpaper {
+  clip-path: inset(0 0 0 var(--preview-rail-width, 28%));
 }
 .theme-skin-preview-toolbar {
   display: flex;
@@ -4244,23 +4809,29 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   position: absolute;
   inset: 0;
   z-index: 1;
-  display: grid;
-  grid-template-columns: minmax(7rem, 28%) minmax(0, 1fr);
   color: var(--preview-text);
   font-family: var(--font-sans, inherit);
   background: transparent;
+  isolation: isolate;
 }
 /*
- * Sidebar: glass skins use material opacity over wallpaper; classic/opaque use solid panel
- * (matches live [data-testid=sidebar] glass/solid rules).
+ * Sidebar: absolute overlay rail (live AppSidebar), not a grid column —
+ * wallpaper canvas stays full-width for cover/contain/focus%.
  */
 .theme-skin-preview-sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 2;
   display: flex;
+  width: var(--preview-rail-width, 28%);
   min-width: 0;
   flex-direction: column;
-  gap: 0.08rem;
+  gap: 0.06rem;
   border-right: 1px solid var(--preview-sidebar-material-border);
-  padding: 0.7rem 0.55rem;
+  padding: 0.55rem 0.45rem 0.5rem;
+  box-sizing: border-box;
 }
 /* Preview rail: native translucent | material glass | solid (matches live shell). */
 .theme-skin-studio-preview[data-preview-sidebar-translucent="true"] .theme-skin-preview-sidebar {
@@ -4329,49 +4900,114 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
 .theme-skin-preview-brand {
   display: flex;
   min-width: 0;
-  min-height: 1.85rem;
+  min-height: 1.65rem;
   align-items: center;
   justify-content: space-between;
   gap: 0.35rem;
-  margin-bottom: 0.34rem;
-  padding: 0 0.24rem;
+  margin-bottom: 0.28rem;
+  padding: 0 0.28rem;
 }
 .theme-skin-preview-brand-name {
   min-width: 0;
   overflow: hidden;
   color: var(--preview-text);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 700;
-  letter-spacing: -0.025em;
+  letter-spacing: -0.03em;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .theme-skin-preview-brand-search {
-  width: 0.84rem;
-  height: 0.84rem;
+  width: 0.8rem;
+  height: 0.8rem;
   flex: 0 0 auto;
   color: var(--preview-muted);
+  opacity: 0.85;
+}
+.theme-skin-preview-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 0.06rem;
 }
 .theme-skin-preview-nav-item {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  border-radius: 0.38rem;
-  padding: 0.38rem 0.4rem;
-  color: var(--preview-muted);
-  font-size: 0.56rem;
-  font-weight: 560;
-  line-height: 1.1;
+  gap: 0.42rem;
+  border-radius: 0.42rem;
+  padding: 0.36rem 0.42rem;
+  color: var(--preview-text);
+  font-size: 0.58rem;
+  font-weight: 500;
+  line-height: 1.15;
   white-space: nowrap;
+  opacity: 0.88;
 }
 .theme-skin-preview-nav-item[data-primary="true"] {
-  background: color-mix(in srgb, var(--preview-primary) 18%, transparent);
+  background: color-mix(in srgb, var(--preview-primary) 16%, transparent);
   color: var(--preview-text);
+  opacity: 1;
+  font-weight: 560;
 }
 .theme-skin-preview-nav-item > svg {
-  width: 0.78rem;
-  height: 0.78rem;
+  width: 0.82rem;
+  height: 0.82rem;
   flex: 0 0 auto;
+  opacity: 0.75;
+}
+.theme-skin-preview-section {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 0.08rem;
+  margin-top: 0.5rem;
+  padding: 0 0.08rem;
+}
+.theme-skin-preview-section-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.2rem;
+  margin: 0.06rem 0 0.12rem;
+  padding: 0 0.2rem;
+}
+.theme-skin-preview-section-label {
+  min-width: 0;
+  color: var(--group-label-color, var(--preview-muted));
+  font-size: 0.52rem;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  opacity: 0.95;
+}
+.theme-skin-preview-section-chevron {
+  width: 0.7rem;
+  height: 0.7rem;
+  flex: 0 0 auto;
+  color: var(--preview-muted);
+  opacity: 0.55;
+  transform: rotate(90deg);
+}
+.theme-skin-preview-thread-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  border-radius: 0.4rem;
+  padding: 0.32rem 0.42rem;
+  color: var(--preview-text);
+  font-size: 0.55rem;
+  font-weight: 500;
+  line-height: 1.2;
+  white-space: nowrap;
+  opacity: 0.78;
+}
+.theme-skin-preview-thread-row > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.theme-skin-preview-thread-row[data-active="true"] {
+  background: var(--hover-fill, color-mix(in srgb, var(--preview-primary) 12%, transparent));
+  color: var(--preview-text);
+  opacity: 1;
 }
 .theme-skin-preview-sidebar-spacer {
   flex: 1 1 auto;
@@ -4381,34 +5017,54 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   border-top: 1px solid color-mix(in srgb, var(--preview-line) 75%, transparent);
   padding-top: 0.45rem;
 }
+.theme-skin-field-hint {
+  margin: 0.35rem 0 0;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  line-height: 1.4;
+}
+/*
+ * Live .shell-content: full-bleed under rail, padding-left + background-clip: content-box
+ * so the page wash never paints under the frosted rail.
+ */
 .theme-skin-preview-main {
-  position: relative;
+  position: absolute;
+  inset: 0;
+  z-index: 1;
   display: flex;
   min-width: 0;
   flex-direction: column;
   overflow: hidden;
   isolation: isolate;
+  box-sizing: border-box;
+  padding-left: var(--preview-rail-width, 28%);
   background: rgb(var(--preview-background-rgb) / var(--preview-page-opacity));
   background: color-mix(
     in srgb,
     var(--background) calc(var(--preview-page-opacity) * 100%),
     transparent
   );
+  background-clip: content-box;
 }
 .theme-skin-studio-preview[data-preview-glass="true"] .theme-skin-preview-main {
   -webkit-backdrop-filter: blur(var(--preview-blur)) saturate(112%);
   backdrop-filter: blur(var(--preview-blur)) saturate(112%);
 }
 .theme-skin-studio-preview[data-preview-glass="false"] .theme-skin-preview-main {
-  /* Solid page: full canvas, no glass wash. */
+  /* Solid page: opaque content region only (rail padding stays clear). */
   background: var(--background);
+  background-clip: content-box;
   -webkit-backdrop-filter: none;
   backdrop-filter: none;
 }
+/* Task readability scrim sits on the content box (live .thread-pane::before). */
 .theme-skin-preview-main::before {
   content: "";
   position: absolute;
-  inset: 0;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: var(--preview-rail-width, 28%);
   z-index: 0;
   pointer-events: none;
   background: linear-gradient(
@@ -4418,7 +5074,6 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
     rgb(var(--preview-background-rgb) / calc(var(--preview-task-intensity, 0.6) * 0.42)) 100%
   );
 }
-/* No task scrim when a custom skin sets intensity to 0. */
 .theme-skin-studio-preview[data-preview-glass="false"] .theme-skin-preview-main::before {
   display: none;
 }
@@ -4490,38 +5145,41 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 1rem 0.8rem 0.8rem;
+  gap: 0;
+  padding: 0.85rem 1rem 0.5rem;
   text-align: center;
 }
 .theme-skin-preview-empty-logo {
-  width: 2.25rem;
-  height: 2.25rem;
-  margin-bottom: 0.66rem;
+  width: 2rem;
+  height: 2rem;
+  margin-bottom: 0.55rem;
   filter: drop-shadow(0 5px 10px rgb(0 0 0 / 0.16));
 }
 .theme-skin-studio-preview[data-preview-mode="light"] .theme-skin-preview-empty-logo {
   filter: drop-shadow(0 4px 10px rgb(15 23 42 / 0.08));
 }
 .theme-skin-preview-empty-hero h1 {
-  max-width: 13rem;
+  max-width: 12rem;
   margin: 0;
   color: var(--preview-text);
-  font-size: 0.86rem;
-  font-weight: 680;
-  letter-spacing: -0.035em;
-  line-height: 1.32;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+  line-height: 1.3;
 }
 .theme-skin-preview-empty-hero p {
-  max-width: 12rem;
-  margin: 0.44rem 0 0;
+  max-width: 11rem;
+  margin: 0.35rem 0 0;
   color: var(--preview-muted);
-  font-size: 0.54rem;
-  line-height: 1.42;
+  font-size: 0.5rem;
+  line-height: 1.4;
+  opacity: 0.92;
 }
 .theme-skin-preview-composer-dock {
   position: relative;
   flex: 0 0 auto;
-  padding: 0 0.58rem 0.56rem;
+  /* Match live composer-dock horizontal inset feel */
+  padding: 0 0.7rem 0.55rem;
   background: transparent;
 }
 /*
@@ -4532,9 +5190,9 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   display: flex;
   width: 100%;
   min-width: 0;
-  min-height: 1.46rem;
+  min-height: 1.35rem;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.4rem;
   margin: 0;
   border: none;
   border-radius: var(--preview-radius) var(--preview-radius) 0 0;
@@ -4978,7 +5636,8 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
 }
 .settings-row-title {
   @apply leading-snug font-normal text-[var(--foreground)];
-  font-size: calc(var(--ui-font-size, 14px) * 0.96);
+  /* Same size as group labels / regular UI text (override FieldLabel text-sm). */
+  font-size: var(--ui-font-size, 14px);
 }
 .settings-row-desc {
   @apply mt-1 leading-relaxed font-normal text-[var(--muted-foreground)];
@@ -5456,13 +6115,15 @@ textarea.models-scoped-patterns-input[data-slot="textarea"] {
   background: var(--hover-fill);
 }
 .settings-rail-group-label {
+  margin: 0;
   padding: 0.75rem 0.625rem 0.25rem;
-  /* type from .group-label */
+  /* type from .group-label — same size as rail items / regular UI text */
 }
 .settings-rail-item {
-  @apply flex h-[32px] w-full min-w-0 items-center gap-2.5 px-2.5 text-left text-[13px] font-normal transition-colors;
+  @apply flex h-[32px] w-full min-w-0 items-center gap-2.5 px-2.5 text-left font-normal transition-colors;
   border-radius: var(--radius-control);
   color: var(--sidebar-foreground);
+  font-size: var(--ui-font-size, 14px);
 }
 .settings-rail-item:hover {
   background: var(--hover-fill);

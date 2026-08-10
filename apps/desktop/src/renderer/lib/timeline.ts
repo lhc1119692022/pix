@@ -49,6 +49,8 @@ export type TimelineItem =
       title?: string;
       tone?: "info" | "error";
       timestamp?: string;
+      /** True when projected from extension custom message/entry (generic fallback). */
+      extension?: boolean;
     };
 
 /**
@@ -285,8 +287,18 @@ export function projectEventsToTimeline(
           id: `system-fail-${items.length}`,
           kind: "system",
           text: runtimeEvent.message,
-          title: runtimeEvent.reason === "aborted" ? "Response stopped" : "Response failed",
-          tone: "error",
+          title:
+            runtimeEvent.reason === "aborted"
+              ? "Response stopped"
+              : runtimeEvent.reason === "pending"
+                ? "Response pending"
+                : runtimeEvent.reason === "deferred"
+                  ? "Response deferred"
+                  : "Response failed",
+          tone:
+            runtimeEvent.reason === "pending" || runtimeEvent.reason === "deferred"
+              ? "info"
+              : "error",
           timestamp: now(),
         });
       } else if (runtimeEvent.type === "retry.started") {
@@ -388,6 +400,7 @@ export function projectEventsToTimeline(
           text: runtimeEvent.content || summarizeData(runtimeEvent.details),
           tone: "info",
           timestamp: now(),
+          extension: true,
         });
       } else if (runtimeEvent.type === "custom.entry") {
         flushMessage();
@@ -398,6 +411,7 @@ export function projectEventsToTimeline(
           text: summarizeData(runtimeEvent.data),
           tone: "info",
           timestamp: now(),
+          extension: true,
         });
       }
     } else if (event.type === "host.crashed") {

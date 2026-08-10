@@ -68,12 +68,15 @@ import {
   THEME_TOKEN_CSS_VARIABLES,
   THEME_PRESETS,
   THEME_PRESET_IDS,
+  THEME_WALLPAPER_FITS,
+  wallpaperFitToCssSize,
   isDefaultThemeSelection,
   isThemeImagePresetId,
   isThemePresetId,
   type ThemeImagePresetId,
   type ThemePreview,
   type ThemeSelection,
+  type ThemeWallpaperFit,
 } from "../../lib/theme-packs.ts";
 import { PixLogo } from "../PixLogo.tsx";
 import { SettingsButton, SettingsSectionBlock } from "./SettingsPrimitives.tsx";
@@ -276,6 +279,10 @@ function updateArt(
   return { ...config, art: { ...config.art, [key]: value } };
 }
 
+function updateWallpaperFit(config: ThemeSkinConfig, fit: ThemeWallpaperFit): ThemeSkinConfig {
+  return { ...config, art: { ...config.art, wallpaperFit: fit } };
+}
+
 function updateMaterials(
   config: ThemeSkinConfig,
   key: "sidebarOpacity" | "pageOpacity" | "panelOpacity" | "blur" | "radius" | "borderAlpha",
@@ -341,12 +348,16 @@ function ThemeAppPreview(props: {
   const panelOpacity = materials.panelOpacity;
   const taskIntensity = art.taskIntensity;
   const safeArea = art.safeArea ?? ART_DEFAULTS.safeArea;
+  const wallpaperFit = art.wallpaperFit ?? ART_DEFAULTS.wallpaperFit;
   const panelShadow = themePreviewShadow(preview.shadow, preview.backgroundRgb);
+  const artPosition = `${Math.round(art.focusX * 100)}% ${Math.round(art.focusY * 100)}%`;
+  const artSize = wallpaperFitToCssSize(wallpaperFit, art.zoom);
+  // Same CSS variables as applyThemeSelection → live .skin-wallpaper.
   const previewStyle = {
-    // Match the real shell: base fill + wallpaper layer, not a solid preview panel.
-    background: preview.background,
+    background: preview.backgroundSolid,
     color: preview.text,
     colorScheme: props.mode,
+    "--preview-rail-width": "28%",
     "--preview-surface": preview.surface,
     "--preview-panel-alt": preview.panelAlt,
     "--preview-primary": preview.primary,
@@ -360,6 +371,7 @@ function ThemeAppPreview(props: {
     "--preview-text-rgb": preview.textRgb,
     "--preview-accent-rgb": preview.accentRgb,
     "--background": preview.backgroundSolid,
+    "--theme-background": preview.background,
     "--primary": preview.primary,
     "--primary-foreground": preview.primaryForeground,
     "--foreground": preview.text,
@@ -384,6 +396,12 @@ function ThemeAppPreview(props: {
     "--preview-radius": `${Math.round(materials.radius)}px`,
     "--preview-border-alpha": String(materials.borderAlpha),
     "--preview-panel-shadow": panelShadow,
+    "--skin-wallpaper-base": preview.background,
+    "--skin-wallpaper-image": hasWallpaper ? `url(${JSON.stringify(props.backgroundUrl)})` : "none",
+    "--skin-art-position": artPosition,
+    "--skin-art-size": artSize,
+    "--skin-wallpaper-dim": String(art.dim),
+    "--skin-background-rgb": preview.backgroundRgb,
   } as CSSProperties;
 
   return (
@@ -394,59 +412,22 @@ function ThemeAppPreview(props: {
       data-preview-sidebar-translucent={preview.sidebarTranslucent ? "true" : "false"}
       data-preview-sidebar-glass={preview.sidebarGlass ? "true" : "false"}
       data-preview-safe-area={safeArea}
+      data-preview-has-wallpaper={hasWallpaper ? "true" : "false"}
       data-theme={props.mode}
       style={previewStyle}
     >
       {scopedCss ? <style>{scopedCss}</style> : null}
-      {props.backgroundUrl ? (
-        <span
-          className="theme-skin-studio-wallpaper"
-          style={{
-            backgroundImage: `url(${JSON.stringify(props.backgroundUrl)})`,
-            backgroundPosition: `${Math.round(art.focusX * 100)}% ${Math.round(art.focusY * 100)}%`,
-            backgroundSize: `${Math.round(art.zoom * 100)}%`,
-          }}
-        />
-      ) : null}
-      <span
-        className="theme-skin-studio-scrim"
-        style={{
-          background: `rgb(${preview.backgroundRgb} / ${art.dim})`,
-        }}
-      />
-      <div className="theme-skin-preview-app app-shell" aria-hidden="true">
-        <aside
-          className="theme-skin-preview-sidebar"
-          data-preview-sidebar={
-            preview.sidebarTranslucent ? "native" : preview.sidebarGlass ? "glass" : "solid"
-          }
-        >
-          <div className="theme-skin-preview-brand">
-            <span className="theme-skin-preview-brand-name">{tr("app.name")}</span>
-            <Search className="theme-skin-preview-brand-search" strokeWidth={1.7} />
-          </div>
-          <div className="theme-skin-preview-nav-item" data-primary="true">
-            <SquarePen aria-hidden="true" strokeWidth={1.7} />
-            <span>{tr("nav.newThread")}</span>
-          </div>
-          <div className="theme-skin-preview-nav-item">
-            <Boxes aria-hidden="true" strokeWidth={1.7} />
-            <span>{tr("nav.packages")}</span>
-          </div>
-          <div className="theme-skin-preview-nav-item">
-            <Layers aria-hidden="true" strokeWidth={1.7} />
-            <span>{tr("nav.resources")}</span>
-          </div>
-          <div className="theme-skin-preview-sidebar-spacer" />
-          <div className="theme-skin-preview-sidebar-footer">
-            <div className="theme-skin-preview-nav-item">
-              <SettingsIcon aria-hidden="true" strokeWidth={1.7} />
-              <span>{tr("nav.settings")}</span>
-            </div>
-          </div>
-        </aside>
-        <main className="theme-skin-preview-main shell-content thread-pane">
-          <header className="theme-skin-preview-header thread-header">
+
+      {/* Full-canvas wallpaper: same geometry as live .skin-wallpaper (::before image + ::after scrim). */}
+      <div className="theme-skin-studio-wallpaper" aria-hidden />
+
+      {/*
+        Live shell: absolute rail over full-bleed content with padding-left + background-clip.
+        Wallpaper stays viewport-sized so cover/contain/focus% match the real window.
+      */}
+      <div className="theme-skin-preview-app" aria-hidden="true">
+        <main className="theme-skin-preview-main">
+          <header className="theme-skin-preview-header">
             <div className="theme-skin-preview-header-title">
               <strong>{tr("thread.new")}</strong>
               <MoreHorizontal aria-hidden="true" strokeWidth={1.8} />
@@ -457,19 +438,19 @@ function ThemeAppPreview(props: {
             </div>
           </header>
           <div
-            className="theme-skin-preview-empty-hero thread-messages empty"
+            className="theme-skin-preview-empty-hero"
             data-testid="theme-skin-preview-empty-hero"
           >
             <PixLogo className="theme-skin-preview-empty-logo" title={tr("app.name")} />
-            <h1>{tr("empty.titleNoWorkspace")}</h1>
-            <p>{tr("empty.subtitleNoWorkspace")}</p>
+            <h1>{tr("empty.titleConversation")}</h1>
+            <p>{tr("empty.subtitleConversation")}</p>
           </div>
-          <div className="theme-skin-preview-composer-dock composer-dock">
-            <div className="theme-skin-preview-project-bar composer-protrusion">
+          <div className="theme-skin-preview-composer-dock">
+            <div className="theme-skin-preview-project-bar">
               <Folder aria-hidden="true" strokeWidth={1.75} />
               <span>{tr("composer.project.pick")}</span>
             </div>
-            <div className="theme-skin-preview-composer composer-card composer-card-with-protrusion">
+            <div className="theme-skin-preview-composer composer-card-with-protrusion">
               <div className="theme-skin-preview-prompt">{tr("composer.placeholder")}</div>
               <div className="theme-skin-preview-composer-controls">
                 <div className="theme-skin-preview-composer-left">
@@ -487,6 +468,55 @@ function ThemeAppPreview(props: {
             </div>
           </div>
         </main>
+
+        <aside
+          className="theme-skin-preview-sidebar"
+          data-preview-sidebar={
+            preview.sidebarTranslucent ? "native" : preview.sidebarGlass ? "glass" : "solid"
+          }
+        >
+          <div className="theme-skin-preview-brand">
+            <span className="theme-skin-preview-brand-name">{tr("app.name")}</span>
+            <Search className="theme-skin-preview-brand-search" strokeWidth={1.7} />
+          </div>
+          <nav className="theme-skin-preview-nav" aria-hidden>
+            <div className="theme-skin-preview-nav-item" data-primary="true">
+              <SquarePen aria-hidden="true" strokeWidth={1.7} />
+              <span>{tr("nav.newThread")}</span>
+            </div>
+            <div className="theme-skin-preview-nav-item">
+              <Boxes aria-hidden="true" strokeWidth={1.7} />
+              <span>{tr("nav.packages")}</span>
+            </div>
+            <div className="theme-skin-preview-nav-item">
+              <Layers aria-hidden="true" strokeWidth={1.7} />
+              <span>{tr("nav.resources")}</span>
+            </div>
+          </nav>
+          <div className="theme-skin-preview-section">
+            <div className="theme-skin-preview-section-head">
+              <span className="theme-skin-preview-section-label">{tr("section.threads")}</span>
+              <ChevronRight
+                className="theme-skin-preview-section-chevron"
+                strokeWidth={2.25}
+                aria-hidden
+              />
+            </div>
+            <div className="theme-skin-preview-thread-row" data-active="true">
+              <span>{tr("thread.new")}</span>
+            </div>
+            <div className="theme-skin-preview-thread-row">
+              <span>{tr("thread.current")}</span>
+            </div>
+          </div>
+          <div className="theme-skin-preview-sidebar-spacer" />
+          <div className="theme-skin-preview-sidebar-footer">
+            <div className="theme-skin-preview-nav-item">
+              <SettingsIcon aria-hidden="true" strokeWidth={1.7} />
+              <span>{tr("nav.settings")}</span>
+            </div>
+          </div>
+        </aside>
       </div>
     </div>
   );
@@ -830,14 +860,12 @@ export function ThemeSkinStudio(props: ThemeSkinStudioProps) {
     if (busy || defaultSelected) return;
     if (!activeRecord) {
       downloadBuiltin(activePack.config);
-      setMessage(tr("appearance.themeSkinExported"));
       return;
     }
     setBusy(true);
     setMessage(undefined);
     try {
-      const result = await window.pix.themes.exportPick(activeRecord.id);
-      if (result.outputPath) setMessage(tr("appearance.themeSkinExported"));
+      await window.pix.themes.exportPick(activeRecord.id);
     } catch {
       setMessage(tr("appearance.themeSkinError"));
     } finally {
@@ -1008,7 +1036,10 @@ export function ThemeSkinStudio(props: ThemeSkinStudioProps) {
                               backgroundImage: `linear-gradient(135deg, rgb(0 0 0 / .04), rgb(0 0 0 / .3)), url(${JSON.stringify(skin.backgroundUrl)})`,
                               backgroundPosition: `${Math.round((skin.config.art?.focusX ?? 0.5) * 100)}% ${Math.round((skin.config.art?.focusY ?? 0.5) * 100)}%`,
                               backgroundRepeat: "no-repeat",
-                              backgroundSize: "cover",
+                              backgroundSize: wallpaperFitToCssSize(
+                                skin.config.art?.wallpaperFit ?? ART_DEFAULTS.wallpaperFit,
+                                skin.config.art?.zoom ?? ART_DEFAULTS.zoom,
+                              ),
                             }
                           : {}),
                       }}
@@ -1185,35 +1216,79 @@ export function ThemeSkinStudio(props: ThemeSkinStudioProps) {
                       />
 
                       <div className="theme-skin-dialog-asset-actions">
-                        <input
-                          ref={imageInput}
-                          className="sr-only"
-                          type="file"
-                          accept="image/png,image/jpeg,image/webp"
-                          data-testid="appearance-theme-skin-background-file"
-                          onChange={(event) => void chooseBackground(event)}
-                        />
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          data-testid="appearance-theme-skin-background"
-                          disabled={busy}
-                          onClick={() => imageInput.current?.click()}
-                        >
-                          <ImagePlus className="size-3.5" strokeWidth={1.75} />
-                          {tr("appearance.themeSkinChooseBackground")}
-                        </Button>
-                        {editorBackgroundUrl ? (
+                        <div className="theme-skin-dialog-asset-actions-left">
+                          <input
+                            ref={imageInput}
+                            className="sr-only"
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            data-testid="appearance-theme-skin-background-file"
+                            onChange={(event) => void chooseBackground(event)}
+                          />
                           <Button
                             type="button"
-                            variant="ghost"
+                            variant="outline"
                             size="sm"
+                            data-testid="appearance-theme-skin-background"
                             disabled={busy}
-                            onClick={removeWallpaper}
+                            onClick={() => imageInput.current?.click()}
                           >
-                            {tr("appearance.themeSkinRemoveBackground")}
+                            <ImagePlus className="size-3.5" strokeWidth={1.75} />
+                            {tr("appearance.themeSkinChooseBackground")}
                           </Button>
+                          {editorBackgroundUrl ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={busy}
+                              onClick={removeWallpaper}
+                            >
+                              {tr("appearance.themeSkinRemoveBackground")}
+                            </Button>
+                          ) : null}
+                        </div>
+                        {editorBackgroundUrl ? (
+                          <div className="theme-skin-dialog-asset-fit">
+                            <Select
+                              value={editable.art?.wallpaperFit ?? ART_DEFAULTS.wallpaperFit}
+                              onValueChange={(value) => {
+                                if (
+                                  value === "cover" ||
+                                  value === "contain" ||
+                                  value === "stretch"
+                                ) {
+                                  changeDraft(updateWallpaperFit(editable, value));
+                                }
+                              }}
+                            >
+                              <SelectTrigger
+                                data-testid="appearance-theme-skin-wallpaper-fit"
+                                size="sm"
+                                className="theme-skin-dialog-asset-fit-trigger"
+                                aria-label={tr("appearance.themeSkinWallpaperFit")}
+                              >
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent align="end" side="top">
+                                {THEME_WALLPAPER_FITS.map((fit) => (
+                                  <SelectItem
+                                    key={fit}
+                                    value={fit}
+                                    data-testid={`appearance-theme-skin-wallpaper-fit-${fit}`}
+                                  >
+                                    {tr(
+                                      fit === "cover"
+                                        ? "appearance.themeSkinWallpaperFitCover"
+                                        : fit === "contain"
+                                          ? "appearance.themeSkinWallpaperFitContain"
+                                          : "appearance.themeSkinWallpaperFitStretch",
+                                    )}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
                         ) : null}
                       </div>
                     </div>
@@ -1287,14 +1362,20 @@ export function ThemeSkinStudio(props: ThemeSkinStudioProps) {
                               0.01,
                               ART_DEFAULTS.focusY,
                             ],
-                            [
-                              "zoom",
-                              tr("appearance.themeSkinZoom"),
-                              0.75,
-                              1.5,
-                              0.01,
-                              ART_DEFAULTS.zoom,
-                            ],
+                            // Zoom only refines cover mode (crop scale).
+                            ...((editable.art?.wallpaperFit ?? ART_DEFAULTS.wallpaperFit) ===
+                            "cover"
+                              ? ([
+                                  [
+                                    "zoom",
+                                    tr("appearance.themeSkinZoom"),
+                                    0.75,
+                                    1.5,
+                                    0.01,
+                                    ART_DEFAULTS.zoom,
+                                  ],
+                                ] as const)
+                              : ([] as const)),
                             ["dim", tr("appearance.themeSkinDim"), 0, 0.75, 0.01, ART_DEFAULTS.dim],
                             [
                               "taskIntensity",

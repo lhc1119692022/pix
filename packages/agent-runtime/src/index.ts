@@ -52,6 +52,7 @@ import {
 import { deleteProviderCredential, persistProviderApiKey } from "./auth-json.ts";
 import {
   listModelsJsonProviderIds,
+  normalizeModelsJsonBaseUrls,
   readModelsJsonConfig,
   removeCustomModelFromModelsJson,
   removeCustomProviderFromModelsJson,
@@ -90,11 +91,13 @@ export {
   ensureModelsJsonTemplate,
   listModelsJsonProviderIds,
   modelsJsonPath,
+  normalizeModelsJsonBaseUrls,
   readModelsJsonConfig,
   removeCustomModelFromModelsJson,
   removeCustomProviderFromModelsJson,
   upsertCustomProviderInModelsJson,
 } from "./models-json.ts";
+export { normalizeProviderBaseUrl } from "./provider-base-url.ts";
 export {
   PIX_SESSION_DIR_ENV,
   resolvePixSessionDir,
@@ -1542,6 +1545,8 @@ export async function createPixRuntime(
     sessionStartEvent,
   }) => {
     const settingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+    // Fix bare-host vs trailing-/v1 mistakes before pi loads models.json.
+    await normalizeModelsJsonBaseUrls(agentDir);
     const services = await createAgentSessionServices({
       cwd,
       agentDir,
@@ -2174,6 +2179,7 @@ export async function createPixRuntime(
       });
     },
     async refreshModelCatalog() {
+      await normalizeModelsJsonBaseUrls(runtime.services.agentDir);
       recordModelRefreshResult(await runtime.services.modelRuntime.refresh());
       return projectModelSummaries(runtime.services);
     },

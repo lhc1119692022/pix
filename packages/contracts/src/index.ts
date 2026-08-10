@@ -1427,6 +1427,8 @@ export type AppUpdateState =
   | "not-available"
   | "downloading"
   | "downloaded"
+  /** Archive is on disk; quit-and-install / mac replace is in progress. */
+  | "installing"
   | "error";
 
 export type AppUpdateStatus = {
@@ -1553,6 +1555,28 @@ export type ThemeSkinExportResult = {
   outputPath?: string;
 };
 
+/** Desktop prefs: use Node/Python shipped under Resources/runtimes (default ON). */
+export type BundledRuntimePrefs = {
+  useBundledNode: boolean;
+  useBundledPython: boolean;
+};
+
+export type BundledRuntimeStatus = {
+  prefs: BundledRuntimePrefs;
+  available: boolean;
+  root?: string;
+  node?: {
+    version?: string;
+    path?: string;
+    enabled: boolean;
+  };
+  python?: {
+    version?: string;
+    path?: string;
+    enabled: boolean;
+  };
+};
+
 export interface PixDesktopApi {
   app: {
     /** OS platform + packaging flags for chrome layout / dev tools. */
@@ -1623,6 +1647,14 @@ export interface PixDesktopApi {
     installGlobal(): Promise<PiCliEnsureResult>;
     /** Re-check npm registry for the latest package version (bypasses short cache). */
     checkLatest(): Promise<PiSdkStatus>;
+  };
+  /**
+   * Bundled Node.js + Python (Resources/runtimes). Default ON — prepended to PATH
+   * for terminal mode and agent tools without requiring a system install.
+   */
+  runtimes: {
+    getStatus(): Promise<BundledRuntimeStatus>;
+    setPrefs(prefs: Partial<BundledRuntimePrefs>): Promise<BundledRuntimeStatus>;
   };
   /**
    * Embedded pi TUI (terminal mode): real PTY running `pi --session <file>`.

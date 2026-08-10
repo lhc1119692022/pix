@@ -21,6 +21,7 @@ import {
   Palette,
   PanelLeft,
   PanelLeftClose,
+  Loader2,
   RefreshCw,
   Search,
   Settings as SettingsIcon,
@@ -30,6 +31,7 @@ import {
   SquarePen,
   Terminal,
   BarChart3,
+  Cpu,
 } from "lucide-react";
 import type { PointerEvent as ReactPointerEvent, ReactNode } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -540,6 +542,7 @@ function SettingsRail(props: {
      *  Pi — SDK runtime + agent settings.json behavior
      *  模型 — providers, catalog, usage
      *  工作区 — Git → environment → terminal → worktree
+     *  安全 — bundled runtimes (Node/Python trust boundary)
      *  网络 — connectivity (proxy; lower priority, advanced)
      *  数据 — archives
      */
@@ -643,6 +646,18 @@ function SettingsRail(props: {
           testId: "settings-nav-worktree",
           labelKey: "section.worktree",
           icon: <FolderGit2 className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} />,
+        },
+      ],
+    },
+    {
+      id: "security",
+      labelKey: "settings.group.security",
+      items: [
+        {
+          section: "runtimes",
+          testId: "settings-nav-runtimes",
+          labelKey: "section.runtimes",
+          icon: <Cpu className="size-3.5 shrink-0 opacity-70" strokeWidth={1.75} />,
         },
       ],
     },
@@ -763,10 +778,17 @@ function GitHubMark(props: { className?: string }) {
   );
 }
 
-type SidebarUpdatePhase = "github" | "available" | "downloading" | "downloaded" | "error";
+type SidebarUpdatePhase =
+  | "github"
+  | "available"
+  | "downloading"
+  | "downloaded"
+  | "installing"
+  | "error";
 
 function sidebarUpdatePhase(status: AppUpdateStatus): SidebarUpdatePhase {
   if (status.state === "error") return "error";
+  if (status.state === "installing") return "installing";
   if (status.state === "downloading") return "downloading";
   if (status.state === "downloaded") return "downloaded";
   if (status.state === "available") return "available";
@@ -819,7 +841,7 @@ function SidebarUpdateProgress(props: { percent: number | undefined }) {
 
 /**
  * Right of 系统设置: GitHub by default; blue download when an update exists;
- * progress while downloading; restart icon when ready to install.
+ * progress while downloading (locked); restart when ready; installing feedback (locked).
  */
 function SidebarUpdateButton(props: {
   locale: Locale;
@@ -837,6 +859,8 @@ function SidebarUpdateButton(props: {
     status.percent !== undefined && Number.isFinite(status.percent)
       ? Math.max(0, Math.min(100, Math.round(status.percent)))
       : undefined;
+  /** Download / install in flight — not interactive. */
+  const locked = busy || phase === "downloading" || phase === "installing";
 
   useEffect(() => {
     let cancelled = false;
@@ -853,7 +877,7 @@ function SidebarUpdateButton(props: {
   }, []);
 
   async function onClick() {
-    if (busy) return;
+    if (locked) return;
     if (phase === "github") {
       void window.pix.workspace.openExternal(GITHUB_REPO_URL).catch(() => undefined);
       return;
@@ -874,14 +898,13 @@ function SidebarUpdateButton(props: {
       }
       return;
     }
-    if (phase === "downloading") {
-      // Already in progress — no-op (status stream updates the glyph).
-      return;
-    }
     if (phase === "downloaded") {
       setBusy(true);
+      // Optimistic UI: main process also broadcasts `installing`.
+      setStatus((prev) => ({ ...prev, state: "installing", percent: 100 }));
       try {
         await window.pix.app.quitAndInstall();
+        // App should quit/relaunch; keep locked if it does not.
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         setStatus((prev) => ({ ...prev, state: "error", error: message }));
@@ -896,34 +919,45 @@ function SidebarUpdateButton(props: {
       : phase === "available"
         ? tr("nav.update.available")
         : phase === "downloading"
-          ? tr("nav.update.downloading")
-          : phase === "downloaded"
-            ? tr("nav.update.restartInstall")
-            : tr("nav.update.github");
+          ? percent !== undefined
+            ? tr("nav.update.downloadingPct", { percent: String(percent) })
+            : tr("nav.update.downloading")
+          : phase === "installing"
+            ? tr("nav.update.installing")
+            : phase === "downloaded"
+              ? tr("nav.update.restartInstall")
+              : tr("nav.update.github");
 
   return (
     <button
       type="button"
       data-testid="sidebar-update-btn"
       data-phase={phase}
+      data-locked={locked ? "true" : "false"}
       title={title}
       aria-label={title}
-      aria-busy={busy || phase === "downloading"}
+      aria-busy={locked}
+      aria-disabled={locked}
+      disabled={locked}
       className={cn(
-        "relative inline-flex size-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-[color,background-color,box-shadow,transform] duration-200",
+        "relative inline-flex size-8 min-w-8 shrink-0 items-center justify-center overflow-hidden rounded-lg transition-[color,background-color,box-shadow,transform,opacity] duration-200",
+        locked && "pointer-events-none cursor-not-allowed",
         phase === "error"
           ? "bg-red-500/[0.08] text-red-500 ring-1 ring-inset ring-red-500/15 hover:bg-red-500/15 hover:text-red-600 active:scale-95"
           : phase === "available"
             ? "bg-blue-500/[0.08] text-blue-500 ring-1 ring-inset ring-blue-500/15 hover:bg-blue-500/15 hover:text-blue-600 active:scale-95"
             : phase === "downloading"
-              ? "cursor-default bg-blue-500/[0.06] text-blue-500 ring-1 ring-inset ring-blue-500/10"
-              : phase === "downloaded"
-                ? "bg-blue-500 text-white shadow-sm shadow-blue-500/25 hover:bg-blue-600 hover:text-white active:scale-95"
-                : "text-[var(--muted-foreground)] hover:bg-[var(--hover-fill)] hover:text-[var(--sidebar-foreground)] active:scale-95",
+              ? "bg-blue-500/[0.08] text-blue-500 ring-1 ring-inset ring-blue-500/15 opacity-90"
+              : phase === "installing"
+                ? "bg-blue-500 text-white shadow-sm shadow-blue-500/25 opacity-95"
+                : phase === "downloaded"
+                  ? "bg-blue-500 text-white shadow-sm shadow-blue-500/25 hover:bg-blue-600 hover:text-white active:scale-95"
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--hover-fill)] hover:text-[var(--sidebar-foreground)] active:scale-95",
       )}
       onClick={(event) => {
         event.preventDefault();
         event.stopPropagation();
+        if (locked) return;
         void onClick();
       }}
     >
@@ -938,6 +972,13 @@ function SidebarUpdateButton(props: {
         </span>
       ) : phase === "downloading" ? (
         <SidebarUpdateProgress percent={percent} />
+      ) : phase === "installing" ? (
+        <span
+          className="relative inline-flex size-5 items-center justify-center"
+          aria-hidden="true"
+        >
+          <Loader2 className="size-3.5 motion-safe:animate-spin" strokeWidth={2.1} />
+        </span>
       ) : (
         <RefreshCw className="size-3.5" strokeWidth={2} />
       )}

@@ -1619,7 +1619,7 @@ export interface PixDesktopApi {
   };
   /**
    * Global `pi` CLI detection (no auto-install).
-   * Default runtime is the user-global SDK; install/update it via Settings → Pi.
+   * Default runtime is the builtin SDK; install global only via Settings → Pi.
    */
   pi: {
     /** Detect global `pi` if present; does not run npm install. */

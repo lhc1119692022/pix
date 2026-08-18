@@ -21,6 +21,7 @@
     "test:runtimes": "node scripts/fetch-runtimes.test.mjs"
   },
   "dependencies": {
+    "@earendil-works/pi-coding-agent": "catalog:",
     "@pix/agent-runtime": "workspace:*",
     "@pix/contracts": "workspace:*",
     "@shadcn/react": "catalog:",
@@ -48,7 +49,6 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "catalog:",
     "@pix/test-utils": "workspace:*",
     "@playwright/test": "catalog:",
     "@tailwindcss/vite": "catalog:",

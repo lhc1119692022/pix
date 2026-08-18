@@ -102,6 +102,7 @@ describe("MarkdownContent", () => {
     const image = render("![preview](/tmp/design%20preview.png)");
     expect(image).toContain("content-image-button");
     expect(image).toContain("file:///tmp/design%20preview.png");
+    expect(image).toContain('draggable="true"');
   });
 
   it("renders GFM footnotes as a Sources section with citation chips", () => {

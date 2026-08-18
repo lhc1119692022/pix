@@ -236,8 +236,9 @@ describe("PiTuiPtyController", () => {
     expect(tracker.spawns).toHaveLength(1);
     // Real node from the machine (or PATH) should wrap the shebang script.
     expect(tracker.spawns[0]?.file.toLowerCase()).toMatch(/node(\.exe)?$/);
-    // macOS realpath may prefix /private — compare resolved tails.
-    expect(tracker.spawns[0]?.args[0]?.endsWith("/bin/pi")).toBe(true);
+    // Normalize separators so the same assertion works on Windows and macOS.
+    const scriptArg = tracker.spawns[0]?.args[0]?.replaceAll("\\", "/");
+    expect(scriptArg?.endsWith("/bin/pi")).toBe(true);
     expect(tracker.spawns[0]?.args.slice(1)).toEqual(["--session", join(root, "s.jsonl")]);
   });
 });

@@ -9,7 +9,11 @@ import {
   resolveMacAppBundlePath,
 } from "./mac-install-update.ts";
 
-describe("resolveMacAppBundlePath", () => {
+// These tests exercise real macOS bundle/path semantics. Keep them for macOS CI,
+// but do not report them as Windows failures when developing locally.
+const describeMacOnly = process.platform === "win32" ? describe.skip : describe;
+
+describeMacOnly("resolveMacAppBundlePath", () => {
   it("walks up from Contents/MacOS/executable", () => {
     expect(resolveMacAppBundlePath("/Applications/Pix.app/Contents/MacOS/Pix")).toBe(
       "/Applications/Pix.app",
@@ -17,7 +21,7 @@ describe("resolveMacAppBundlePath", () => {
   });
 });
 
-describe("findAppBundleInDir", () => {
+describeMacOnly("findAppBundleInDir", () => {
   it("finds a root-level .app", () => {
     const dir = mkdtempSync(join(tmpdir(), "pix-find-app-"));
     try {
@@ -43,7 +47,7 @@ describe("findAppBundleInDir", () => {
   });
 });
 
-describe("installMacUpdateFromZip", () => {
+describeMacOnly("installMacUpdateFromZip", () => {
   it("swaps the app bundle via ditto extract + rename", async () => {
     const root = mkdtempSync(join(tmpdir(), "pix-mac-install-"));
     try {

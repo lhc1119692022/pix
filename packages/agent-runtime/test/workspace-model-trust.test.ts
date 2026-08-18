@@ -96,7 +96,12 @@ describe("Workspace model trust resume", () => {
       const models = handle.listModels();
       expect(models.some((m) => m.id === "pix-fake")).toBe(true);
       expect(models.some((m) => m.id === "pix-fake-b")).toBe(true);
+      expect(models.find((m) => m.provider === "baseten")?.source).toBe("builtin");
+      expect(models.find((m) => m.provider === "qwen-token-plan-individual")?.source).toBe(
+        "builtin",
+      );
       expect(models.find((m) => m.id === "pix-fake")).toMatchObject({
+        source: "custom",
         api: "openai-completions",
         input: ["text"],
         contextWindow: 8192,
@@ -196,6 +201,49 @@ describe("provider auth projection", () => {
       // may still be configured via models.json key
       expect(JSON.stringify(cleared)).not.toContain("sk-test-provider-key-not-real");
     } finally {
+      await handle.dispose();
+    }
+  });
+});
+
+describe("model catalog refresh", () => {
+  it("keeps usable models and projects refresh failures as diagnostics", async () => {
+    const { agentDir, project } = await fixture();
+    const handle = await createPixRuntime({
+      cwd: project,
+      agentDir,
+      model: { provider: "pix-fake", id: "pix-fake" },
+      projectTrusted: true,
+    });
+    const modelRuntime = handle.runtime.services.modelRuntime;
+    const refresh = modelRuntime.refresh.bind(modelRuntime);
+    modelRuntime.refresh = async () => ({
+      aborted: false,
+      errors: new Map([["broken-provider", new Error("catalog unavailable")]]),
+    });
+    try {
+      await expect(handle.refreshModelCatalog()).resolves.toEqual(handle.listModels());
+      expect(handle.snapshot().diagnostics).toContainEqual({
+        type: "warning",
+        message: "Model catalog broken-provider failed to refresh: catalog unavailable",
+      });
+
+      modelRuntime.refresh = async () => ({ aborted: true, errors: new Map() });
+      await expect(handle.refreshModelCatalog()).resolves.toEqual(handle.listModels());
+      expect(handle.snapshot().diagnostics).toContainEqual({
+        type: "warning",
+        message: "Model catalog refresh was cancelled; using cached models.",
+      });
+
+      modelRuntime.refresh = async () => ({ aborted: false, errors: new Map() });
+      await expect(handle.refreshModelCatalog()).resolves.toEqual(handle.listModels());
+      expect(handle.snapshot().diagnostics).not.toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ message: expect.stringContaining("Model catalog") }),
+        ]),
+      );
+    } finally {
+      modelRuntime.refresh = refresh;
       await handle.dispose();
     }
   });

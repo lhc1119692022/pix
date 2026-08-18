@@ -199,7 +199,7 @@ describe("P03 git package transport", () => {
     expect(manager.getInstalledPath(globalV2, "user")).toBeUndefined();
   }, 60_000);
 
-  it("recovers a retained clone after an injected dependency-install failure", async () => {
+  it("recovers after an injected dependency-install failure", async () => {
     const root = await mkdtemp(join(tmpdir(), "pix-pkg-git-dependency-"));
     temporaryDirectories.push(root);
     const agentDir = join(root, "home", ".pi", "agent");

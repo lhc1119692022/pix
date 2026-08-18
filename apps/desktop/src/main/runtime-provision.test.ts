@@ -26,12 +26,12 @@ function makeVendorWithArchives(): {
 } {
   const root = mkdtempSync(join(tmpdir(), "pix-vendor-"));
   const userData = mkdtempSync(join(tmpdir(), "pix-userdata-"));
-  const nodeDir = join(root, "node", "bin");
-  const pyDir = join(root, "python", "bin");
+  const nodeDir = join(root, "node", ...(process.platform === "win32" ? [] : ["bin"]));
+  const pyDir = join(root, "python", ...(process.platform === "win32" ? [] : ["bin"]));
   mkdirSync(nodeDir, { recursive: true });
   mkdirSync(pyDir, { recursive: true });
-  const nodeBin = join(nodeDir, "node");
-  const pyBin = join(pyDir, "python3");
+  const nodeBin = join(nodeDir, process.platform === "win32" ? "node.exe" : "node");
+  const pyBin = join(pyDir, process.platform === "win32" ? "python.exe" : "python3");
   writeFileSync(nodeBin, "#!/bin/sh\necho v22.19.0\n", { mode: 0o755 });
   writeFileSync(pyBin, "#!/bin/sh\necho Python 3.12.13\n", { mode: 0o755 });
   writeFileSync(
@@ -91,8 +91,20 @@ describe("extractRuntimeArchives", () => {
         },
         dest,
       );
-      expect(existsSync(join(dest, "node", "bin", "node"))).toBe(true);
-      expect(existsSync(join(dest, "python", "bin", "python3"))).toBe(true);
+      expect(
+        existsSync(
+          join(dest, "node", ...(process.platform === "win32" ? ["node.exe"] : ["bin", "node"])),
+        ),
+      ).toBe(true);
+      expect(
+        existsSync(
+          join(
+            dest,
+            "python",
+            ...(process.platform === "win32" ? ["python.exe"] : ["bin", "python3"]),
+          ),
+        ),
+      ).toBe(true);
       const roots = rootsFromRuntimeRoot(dest);
       expect(roots?.nodeRoot).toBe(join(dest, "node"));
     } finally {
@@ -120,7 +132,15 @@ describe("ensureProvisionedRuntimes", () => {
       expect(layout).toBeDefined();
       expect(layout?.source).toBe("userData");
       expect(layout?.provisioned).toBe(true);
-      expect(existsSync(join(userRuntimesRoot(userData), "node", "bin", "node"))).toBe(true);
+      expect(
+        existsSync(
+          join(
+            userRuntimesRoot(userData),
+            "node",
+            ...(process.platform === "win32" ? ["node.exe"] : ["bin", "node"]),
+          ),
+        ),
+      ).toBe(true);
       expect(existsSync(npmPrefixDir(userData))).toBe(true);
       expect(layout?.npmPrefix).toBe(npmPrefixDir(userData));
 
@@ -175,8 +195,15 @@ describe("isolation env", () => {
       if (!roots) return;
 
       const dirs = ensureIsolationDirs({ userDataPath: userData });
-      mkdirSync(join(dirs.pythonVenv, "bin"), { recursive: true });
-      writeFileSync(join(dirs.pythonVenv, "bin", "python3"), "#!/bin/sh\n", { mode: 0o755 });
+      const venvBin = join(dirs.pythonVenv, process.platform === "win32" ? "Scripts" : "bin");
+      mkdirSync(venvBin, { recursive: true });
+      writeFileSync(
+        join(venvBin, process.platform === "win32" ? "python.exe" : "python3"),
+        "#!/bin/sh\n",
+        {
+          mode: 0o755,
+        },
+      );
 
       const layout = {
         roots,

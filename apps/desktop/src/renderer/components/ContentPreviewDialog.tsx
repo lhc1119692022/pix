@@ -1,4 +1,4 @@
-import type { ReactEventHandler, ReactNode } from "react";
+import type { DragEventHandler, ReactEventHandler, ReactNode } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { t, type Locale } from "../lib/i18n.ts";
 import { cn } from "../lib/utils.ts";
@@ -57,6 +57,8 @@ export function ImagePreviewDialog(props: {
   source: string;
   alt?: string | undefined;
   locale: Locale;
+  draggable?: boolean | undefined;
+  onDragStart?: DragEventHandler<HTMLImageElement> | undefined;
   onError?: ReactEventHandler<HTMLImageElement> | undefined;
 }) {
   const title = props.alt || t(props.locale, "timeline.imagePreview");
@@ -74,6 +76,8 @@ export function ImagePreviewDialog(props: {
           src={props.source}
           alt={props.alt ?? ""}
           className="content-image-preview-image"
+          draggable={props.draggable}
+          onDragStart={props.onDragStart}
           onError={props.onError}
         />
       </div>

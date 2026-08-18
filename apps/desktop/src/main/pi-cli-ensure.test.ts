@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { describe, expect, it } from "vite-plus/test";
 import { detectPiCli, isProjectLocalPiPath, shouldAutoInstallPiCli } from "./pi-cli-ensure.ts";
 
+const itUnixOnly = process.platform === "win32" ? it.skip : it;
+
 describe("shouldAutoInstallPiCli", () => {
   it("defaults to off (builtin SDK; no auto global install)", () => {
     expect(
@@ -69,7 +71,7 @@ describe("isProjectLocalPiPath", () => {
 });
 
 describe("detectPiCli", () => {
-  it("finds pi under ~/.vite-plus/bin even when PATH is GUI-minimal", async () => {
+  itUnixOnly("finds pi under ~/.vite-plus/bin even when PATH is GUI-minimal", async () => {
     const root = mkdtempSync(join(tmpdir(), "pix-detect-pi-"));
     const bin = join(root, ".vite-plus", "bin");
     mkdirSync(bin, { recursive: true });
@@ -84,21 +86,24 @@ describe("detectPiCli", () => {
     expect(found.path).toBe(piPath);
   });
 
-  it("finds pi under /opt/homebrew-style path via candidate scan when present", async () => {
-    // Use a fake home with .local/bin (always scannable); avoid depending on real /opt/homebrew.
-    const root = mkdtempSync(join(tmpdir(), "pix-detect-local-"));
-    const bin = join(root, ".local", "bin");
-    mkdirSync(bin, { recursive: true });
-    const piPath = join(bin, "pi");
-    writeFileSync(piPath, "#!/bin/sh\necho 1.2.3\n", { mode: 0o755 });
+  itUnixOnly(
+    "finds pi under /opt/homebrew-style path via candidate scan when present",
+    async () => {
+      // Use a fake home with .local/bin (always scannable); avoid depending on real /opt/homebrew.
+      const root = mkdtempSync(join(tmpdir(), "pix-detect-local-"));
+      const bin = join(root, ".local", "bin");
+      mkdirSync(bin, { recursive: true });
+      const piPath = join(bin, "pi");
+      writeFileSync(piPath, "#!/bin/sh\necho 1.2.3\n", { mode: 0o755 });
 
-    const found = await detectPiCli({
-      HOME: root,
-      // No pi on PATH — must use known dirs.
-      PATH: "/usr/bin:/bin",
-    });
-    expect(found.path).toBe(piPath);
-  });
+      const found = await detectPiCli({
+        HOME: root,
+        // No pi on PATH — must use known dirs.
+        PATH: "/usr/bin:/bin",
+      });
+      expect(found.path).toBe(piPath);
+    },
+  );
 
   it("ignores project node_modules/.bin even when first on PATH", async () => {
     const root = mkdtempSync(join(tmpdir(), "pix-detect-proj-"));

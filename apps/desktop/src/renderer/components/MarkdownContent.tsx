@@ -1,5 +1,14 @@
 /** Streaming-safe rich content renderer for assistant messages. */
-import { memo, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type DragEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { BookMarked, Check, Copy, ExternalLink, FileCode2, Maximize2 } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import rehypeKatex from "rehype-katex";
@@ -19,6 +28,7 @@ import {
 } from "../lib/content-rendering.ts";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.ts";
 import { t, type Locale } from "../lib/i18n.ts";
+import { setAttachmentDragPath } from "../lib/composer-attachments.ts";
 import { cn } from "../lib/utils.ts";
 
 /** Browsers block file:// media when the page is served over http(s) (session-content demo). */
@@ -378,6 +388,10 @@ function MediaContent(props: {
     }
   }
 
+  function handleImageDragStart(event: DragEvent<HTMLImageElement>) {
+    if (filePath) setAttachmentDragPath(event.dataTransfer, filePath);
+  }
+
   if (!fallback && !source) return null;
   if (kind === "video") {
     return (
@@ -415,6 +429,8 @@ function MediaContent(props: {
           src={source}
           alt={props.alt ?? ""}
           loading="lazy"
+          draggable={filePath ? true : undefined}
+          onDragStart={filePath ? handleImageDragStart : undefined}
           onError={() => void handleImageError()}
         />
         <span className="content-image-expand" aria-hidden>
@@ -427,6 +443,8 @@ function MediaContent(props: {
         source={source}
         alt={props.alt}
         locale={props.locale}
+        draggable={filePath ? true : undefined}
+        onDragStart={filePath ? handleImageDragStart : undefined}
         onError={() => void handleImageError()}
       />
     </>

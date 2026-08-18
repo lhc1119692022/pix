@@ -199,9 +199,15 @@ describe("prefs gate isolation env and process apply", () => {
     const { root, nodePath, nodeBinDir } = makeRuntimeTree();
     const npmPrefix = join(root, "npm-prefix");
     const pythonVenv = join(root, "python-venv");
+    const npmBin = process.platform === "win32" ? npmPrefix : join(npmPrefix, "bin");
+    const pythonVenvBin = join(pythonVenv, process.platform === "win32" ? "Scripts" : "bin");
     mkdirSync(join(npmPrefix, "bin"), { recursive: true });
-    mkdirSync(join(pythonVenv, "bin"), { recursive: true });
-    writeFileSync(join(pythonVenv, "bin", "python3"), "#!/bin/sh\n", { mode: 0o755 });
+    mkdirSync(pythonVenvBin, { recursive: true });
+    writeFileSync(
+      join(pythonVenvBin, process.platform === "win32" ? "python.exe" : "python3"),
+      "#!/bin/sh\n",
+      { mode: 0o755 },
+    );
 
     resetManagedPathBaseForTests("/usr/bin:/bin");
     configureBundledRuntimes({
@@ -219,7 +225,7 @@ describe("prefs gate isolation env and process apply", () => {
     expect(env.NPM_CONFIG_PREFIX).toBe(npmPrefix);
     expect(env.VIRTUAL_ENV).toBe(pythonVenv);
     expect(env.PATH).toContain(nodeBinDir);
-    expect(env.PATH).toContain(join(npmPrefix, "bin"));
+    expect(env.PATH).toContain(npmBin);
 
     // Toggle both OFF — rebuild from base, strip isolation.
     configureBundledRuntimes({
@@ -230,7 +236,7 @@ describe("prefs gate isolation env and process apply", () => {
     expect(env.NPM_CONFIG_PREFIX).toBeUndefined();
     expect(env.VIRTUAL_ENV).toBeUndefined();
     expect(env.PATH).not.toContain(nodeBinDir);
-    expect(env.PATH).not.toContain(join(npmPrefix, "bin"));
+    expect(env.PATH).not.toContain(npmBin);
     expect(env.PATH).toContain("/usr/bin");
     expect(getActiveRuntimeIsolationEnv()).toEqual({});
   });

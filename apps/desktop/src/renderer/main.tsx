@@ -896,8 +896,8 @@ function App() {
     void refreshConversationSessions();
   }, [workspacePath, recentWorkspaces]);
 
-  // Cold start: gate until host/config is loaded. Default runtime is builtin SDK —
-  // do not probe/install global pi here (Settings → Pi handles global install/switch).
+  // Cold start: gate until host/config is loaded. Global Pi is detected by the
+  // main process; installation remains explicit through Settings → Pi.
   useEffect(() => {
     let cancelled = false;
     const loc = () => useShellStore.getState().locale;

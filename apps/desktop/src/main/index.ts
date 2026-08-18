@@ -84,7 +84,6 @@ import {
   sanitizeUtilityProcessEnv,
 } from "./host-spawn.ts";
 import { createAutoUpdateController, type AutoUpdateController } from "./auto-update.ts";
-import { ensureExtractedPiCli, piCliExtractDir } from "./pi-cli-extract.ts";
 import { ensurePiCli, type PiCliProgressEvent } from "./pi-cli-ensure.ts";
 import {
   buildPiSdkActivity,
@@ -202,18 +201,9 @@ const piTuiGuard = new PiTuiExclusiveGuard();
 let piTuiController: PiTuiPtyController | undefined;
 let piTuiControllerInit: Promise<PiTuiPtyController> | undefined;
 /** Source last applied to a spawned Agent Host (Settings needsRestart). */
-let appliedPiSdkSource: "builtin" | "global" = "builtin";
+let appliedPiSdkSource: "builtin" | "global" = "global";
 let cachedBuiltinSdk: ResolvedPiSdk | undefined;
 let cachedGlobalSdk: ResolvedPiSdk | undefined;
-let piCliExtractInFlight: Promise<void> | undefined;
-
-function desktopUserDataPath(): string {
-  try {
-    return app.getPath("userData");
-  } catch {
-    return join(homedir(), ".pix-runtimes-fallback");
-  }
-}
 
 function resolveBuiltinSdkCached(): ResolvedPiSdk {
   if (cachedBuiltinSdk) return cachedBuiltinSdk;
@@ -231,37 +221,8 @@ function resolveBuiltinSdkCached(): ResolvedPiSdk {
   if (typeof process.resourcesPath === "string" && process.resourcesPath) {
     opts.resourcesPath = process.resourcesPath;
   }
-  const extracted = piCliExtractDir(desktopUserDataPath());
-  if (existsSync(extracted)) opts.extractedRoot = extracted;
   cachedBuiltinSdk = resolveBuiltinSdk(opts);
   return cachedBuiltinSdk;
-}
-
-function ensurePiCliExtracted(): Promise<void> {
-  if (!app.isPackaged) return Promise.resolve();
-  if (piCliExtractInFlight) return piCliExtractInFlight;
-  piCliExtractInFlight = Promise.resolve()
-    .then(() => {
-      const resources =
-        typeof process.resourcesPath === "string" && process.resourcesPath
-          ? process.resourcesPath
-          : "";
-      if (!resources) return;
-      const result = ensureExtractedPiCli({
-        userDataPath: desktopUserDataPath(),
-        asarPath: join(resources, "app.asar"),
-      });
-      if (result?.extractedNow) {
-        cachedBuiltinSdk = undefined;
-        console.log(
-          `[pix] extracted builtin pi CLI ${result.version ?? ""} → ${result.root}`.trim(),
-        );
-      }
-    })
-    .catch((error) => {
-      console.warn("[pix] builtin pi CLI extract failed:", error);
-    });
-  return piCliExtractInFlight;
 }
 
 async function resolveGlobalSdkCached(force = false): Promise<ResolvedPiSdk> {
@@ -331,7 +292,6 @@ async function getPiTuiController(): Promise<PiTuiPtyController> {
   if (piTuiController) return piTuiController;
   if (!piTuiControllerInit) {
     piTuiControllerInit = (async () => {
-      await ensurePiCliExtracted();
       const spawn = await createNodePtySpawn();
       const controller = new PiTuiPtyController(spawn, async () => {
         const preference = getPiSdkPrefs();
@@ -4734,7 +4694,6 @@ void app
   .then(async () => {
     // Name + About/Dock icon (must be after ready for About panel iconPath on some builds).
     applyAppBranding();
-    void ensurePiCliExtracted();
     themeLibrary = new ThemeLibrary(app.getPath("userData"));
     protocol.handle("pix-theme", async (request) => {
       try {
@@ -5022,10 +4981,10 @@ void app
     ipcMain.handle("pix:pi-sdk:install-global", () => runInstallGlobalPiCli());
     ipcMain.handle("pix:pi-sdk:check-latest", () => collectPiSdkStatus({ forceLatest: true }));
 
-    // Only resolve global package when user already prefers global SDK.
-    // Default builtin: skip global pi probe entirely at startup.
+    // Global Pi is the default; probe it during startup so the first host
+    // spawn does not have to rediscover the npm installation.
     if (getPiSdkPrefs().source === "global") {
-      void resolveGlobalSdkCached(true).catch(() => undefined);
+      await resolveGlobalSdkCached(true).catch(() => undefined);
     }
 
     await createWindow();

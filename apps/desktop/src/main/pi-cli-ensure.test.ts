@@ -7,7 +7,7 @@ import { detectPiCli, isProjectLocalPiPath, shouldAutoInstallPiCli } from "./pi-
 const itUnixOnly = process.platform === "win32" ? it.skip : it;
 
 describe("shouldAutoInstallPiCli", () => {
-  it("defaults to off (builtin SDK; no auto global install)", () => {
+  it("defaults to off (no auto global install)", () => {
     expect(
       shouldAutoInstallPiCli({
         PATH: "/usr/bin",

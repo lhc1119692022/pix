@@ -42,9 +42,9 @@ afterEach(() => {
 });
 
 describe("normalizePiSdk", () => {
-  it("defaults to builtin", () => {
+  it("defaults to global", () => {
     expect(normalizePiSdkSource("nope")).toBe("builtin");
-    expect(normalizePiSdkPrefs(undefined)).toEqual({ source: "builtin" });
+    expect(normalizePiSdkPrefs(undefined)).toEqual({ source: "global" });
     expect(normalizePiSdkPrefs({ source: "global" })).toEqual({ source: "global" });
   });
 });

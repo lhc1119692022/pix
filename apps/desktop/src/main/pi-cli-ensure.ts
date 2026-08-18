@@ -92,8 +92,8 @@ let ensureInFlight: Promise<PiCliEnsureResult> | undefined;
 /**
  * Whether startup/bootstrap may run `npm install -g` for the global pi CLI.
  *
- * Default is **false**: Agent Host + terminal default to the **builtin** SDK
- * (Settings → Pi). Global install is opt-in via Settings or `ensurePiCli({ force: true })`.
+ * Default is **false**: the app uses the user-global SDK when present, while
+ * installation itself remains explicit via Settings or `ensurePiCli({ force: true })`.
  * Set PIX_FORCE_PI_INSTALL=1 only for explicit debug/CI that needs auto global install.
  */
 export function shouldAutoInstallPiCli(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -474,7 +474,7 @@ async function ensurePiCliOnce(options: PiCliEnsureOptions): Promise<PiCliEnsure
     };
     emit(onProgress, {
       phase: "skipped",
-      message: "Global pi auto-install is off (builtin SDK is default).",
+      message: "Global pi auto-install is off (install it from Settings → Pi when needed).",
     });
     return skipped;
   }

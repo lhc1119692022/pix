@@ -91,8 +91,7 @@ linux:
   description: Pix is a desktop shell for the pi coding agent.
 # Unpack native helpers only. Windows NSIS copies asar.unpacked file-by-file.
 # node-pty spawn-helper must be a real executable (missing +x → posix_spawnp failed).
-# Builtin pi CLI JS is extracted into userData on first launch so bundled Node can
-# spawn terminal mode on every platform (see src/main/pi-cli-extract.ts).
+# Pi itself is supplied by the user-global npm installation and is not packaged.
 asarUnpack:
   - "**/*.node"
   - "**/node-pty/prebuilds/**"

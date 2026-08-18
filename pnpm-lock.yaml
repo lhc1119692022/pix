@@ -336,9 +336,6 @@ importers:
 
   apps/desktop:
     dependencies:
-      '@earendil-works/pi-coding-agent':
-        specifier: 'catalog:'
-        version: 0.84.1(supports-color@7.2.0)(ws@8.21.0)(zod@4.4.3)
       '@pix/agent-runtime':
         specifier: workspace:*
         version: link:../../packages/agent-runtime
@@ -415,6 +412,9 @@ importers:
         specifier: 'catalog:'
         version: 5.0.3(@types/react@19.2.17)(react@19.2.7)
     devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 'catalog:'
+        version: 0.84.1(supports-color@7.2.0)(ws@8.21.0)(zod@4.4.3)
       '@pix/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
@@ -497,13 +497,13 @@ importers:
 
   packages/agent-runtime:
     dependencies:
-      '@earendil-works/pi-coding-agent':
-        specifier: 'catalog:'
-        version: 0.84.1(supports-color@7.2.0)(ws@8.21.0)(zod@4.4.3)
       '@pix/contracts':
         specifier: workspace:*
         version: link:../contracts
     devDependencies:
+      '@earendil-works/pi-coding-agent':
+        specifier: 'catalog:'
+        version: 0.84.1(supports-color@7.2.0)(ws@8.21.0)(zod@4.4.3)
       '@types/node':
         specifier: 'catalog:'
         version: 26.1.1
@@ -2415,6 +2415,7 @@ packages:
   '@xmldom/xmldom@0.8.13':
     resolution: {integrity: sha512-KRYzxepc14G/CEpEGc3Yn+JKaAeT63smlDr+vjB8jRfgTBBI9wRj/nkQEO+ucV8p8I9bfKLWp37uHgFrbntPvw==}
     engines: {node: '>=10.0.0'}
+    deprecated: this version has critical issues, please update to the latest version
 
   abbrev@4.0.0:
     resolution: {integrity: sha512-a1wflyaL0tHtJSmLSOVybYhy22vRih4eduhhrkcjgrWGnRfrZtovJ2FRjxuTtkkj47O/baf0R86QU5OuYpz8fA==}

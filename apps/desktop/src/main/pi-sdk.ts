@@ -61,7 +61,9 @@ export function normalizePiSdkPrefs(raw: unknown): PiSdkPrefs {
   if (raw && typeof raw === "object" && "source" in raw) {
     return { source: normalizePiSdkSource((raw as { source: unknown }).source) };
   }
-  return { source: "builtin" };
+  // Prefer the user-global Pi installation by default. The builtin resolver
+  // remains available as an explicit compatibility fallback.
+  return { source: "global" };
 }
 
 function readPackageMeta(packageRoot: string): { version?: string; cliPath?: string } {

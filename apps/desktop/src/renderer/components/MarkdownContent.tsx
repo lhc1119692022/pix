@@ -24,6 +24,7 @@ import {
   contentMediaKind,
   contentSourceUrl,
   formatFileLinkLabel,
+  isInlineImagePath,
   parseContentLink,
 } from "../lib/content-rendering.ts";
 import { markdownSanitizeSchema } from "../lib/markdown-sanitize.ts";
@@ -38,7 +39,7 @@ function pageBlocksFileMedia(): boolean {
   return protocol === "http:" || protocol === "https:";
 }
 
-const PREVIEWABLE_IMAGE = /\.(?:png|jpe?g|gif|webp|bmp)$/i;
+const PREVIEWABLE_IMAGE = /\.(?:png|jpe?g|gif|webp|bmp|svg|avif|heic|tif|tiff)$/i;
 
 /** Absolute local image path for workspace.readAttachmentPreview, when applicable. */
 function localPreviewableImagePath(
@@ -211,6 +212,7 @@ function MarkdownLink(props: {
   workspacePath?: string | undefined;
   className?: string | undefined;
   title?: string | undefined;
+  locale: Locale;
   /** GFM footnote reference / backref flags (hast → React). */
   "data-footnote-ref"?: unknown;
   "data-footnote-backref"?: unknown;
@@ -311,6 +313,19 @@ function MarkdownLink(props: {
       ? formatFileLinkLabel(childrenText, target.path, props.workspacePath)
       : undefined;
 
+  // `[播放 v10.gif](v10.gif)` should show the media, not a source-cite chip.
+  if (target.kind === "file" && !target.line && isInlineImagePath(target.path)) {
+    return (
+      <ContentImage
+        src={target.path}
+        alt={childrenText || props.title}
+        title={props.title}
+        workspacePath={props.workspacePath}
+        locale={props.locale}
+      />
+    );
+  }
+
   return (
     <a
       href={href}
@@ -338,7 +353,7 @@ function MarkdownLink(props: {
   );
 }
 
-function MediaContent(props: {
+export function ContentImage(props: {
   src?: string | undefined;
   alt?: string | undefined;
   title?: string | undefined;
@@ -352,8 +367,12 @@ function MediaContent(props: {
     () => localPreviewableImagePath(props.src, props.workspacePath),
     [props.src, props.workspacePath],
   );
-  // http(s) pages cannot load file:// — resolve via IPC/stub data URL instead (demo + safety).
-  const needsPreviewBridge = pageBlocksFileMedia() && Boolean(filePath);
+  // Electron file:// pages cannot load arbitrary local files (sandbox). Prefer
+  // IPC whenever the workspace preview API exists (product + session-content demo).
+  const canBridge =
+    typeof window !== "undefined" &&
+    typeof window.pix?.workspace?.readAttachmentPreview === "function";
+  const needsPreviewBridge = Boolean(filePath) && (canBridge || pageBlocksFileMedia());
   const [source, setSource] = useState(() => (needsPreviewBridge ? "" : fallback));
 
   useEffect(() => {
@@ -364,7 +383,7 @@ function MediaContent(props: {
     let cancelled = false;
     setSource("");
     void window.pix?.workspace
-      ?.readAttachmentPreview?.(filePath)
+      ?.readAttachmentPreview?.(filePath, { maxEdge: 1600 })
       .then((url) => {
         if (cancelled) return;
         setSource(url || fallback);
@@ -377,11 +396,11 @@ function MediaContent(props: {
     };
   }, [needsPreviewBridge, filePath, fallback]);
 
-  // file:// may still fail (missing path / sandbox): last-resort data URL from preview API.
+  // Remote / leftover file:// may still fail: last-resort display-size preview API.
   async function handleImageError() {
     if (!filePath || source.startsWith("data:")) return;
     try {
-      const url = await window.pix?.workspace?.readAttachmentPreview?.(filePath);
+      const url = await window.pix?.workspace?.readAttachmentPreview?.(filePath, { maxEdge: 1600 });
       if (url) setSource(url);
     } catch {
       // leave broken state
@@ -602,6 +621,7 @@ export const MarkdownContent = memo(function MarkdownContent(props: {
                 workspacePath={props.workspacePath}
                 className={className}
                 title={title}
+                locale={locale}
                 id={id}
                 data-footnote-ref={restProps["data-footnote-ref"] ?? restProps.dataFootnoteRef}
                 data-footnote-backref={
@@ -643,7 +663,7 @@ export const MarkdownContent = memo(function MarkdownContent(props: {
           },
           img({ src, alt, title }) {
             return (
-              <MediaContent
+              <ContentImage
                 src={src}
                 alt={alt}
                 title={title}

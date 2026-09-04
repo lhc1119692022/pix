@@ -12,5 +12,5 @@ if not exist "apps\desktop\node_modules\electron\dist\electron.exe" (
   )
 )
 
-call corepack pnpm dev
+call corepack pnpm dev:desktop
 if errorlevel 1 pause
